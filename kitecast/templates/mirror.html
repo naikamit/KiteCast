@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mirror trade</title>
+<style>
+  body { margin:0; background:#0e1116; color:#e6e9ee; display:flex; min-height:100vh;
+         align-items:center; justify-content:center;
+         font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .card { background:#171c24; border:1px solid #2a3240; border-radius:12px;
+          padding:1.6rem; max-width:22rem; text-align:center; }
+  .big { font-size:1.25rem; font-weight:700; margin:.4rem 0; }
+  .dim { color:#8b95a5; font-size:.85rem; }
+  button { margin-top:1rem; width:100%; padding:.8rem; border:0; border-radius:8px;
+           background:#4c8dff; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  .ok { color:#2fbf71; font-weight:700; }
+</style>
+</head>
+<body>
+<div class="card">
+  {% if already_confirmed %}
+  <div class="ok">✓ Already confirmed</div>
+  <p class="dim">This {{ 'entry' if share['leg'] == 'ENTRY' else 'close' }} was mirrored earlier. Nothing to do.</p>
+  {% else %}
+  <div class="dim">{{ 'Mirror entry' if share['leg'] == 'ENTRY' else 'CLOSE POSITION' }}</div>
+  <div class="big">{{ order['transaction_type'] }} {{ order['quantity'] }} × {{ order['tradingsymbol'] }}</div>
+  <div class="dim">{{ order['exchange'] }} · {{ order['product'] }} · {{ order['order_type'] }}</div>
+  <form id="basket" method="post" action="{{ basket_url }}">
+    {% for k, v in fields.items() %}
+    <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {% endfor %}
+    <button type="submit">Confirm in my Kite →</button>
+  </form>
+  <p class="dim">Opens Kite with the order pre-filled — you confirm in your own session. Keep the Kite app installed &amp; logged in for one-tap.</p>
+  <script>document.getElementById('basket').submit();</script>
+  {% endif %}
+</div>
+</body>
+</html>

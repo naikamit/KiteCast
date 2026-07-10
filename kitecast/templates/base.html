@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}KiteCast{% endblock %}</title>
+<style>
+  :root { --bg:#0e1116; --card:#171c24; --line:#2a3240; --fg:#e6e9ee; --dim:#8b95a5;
+          --green:#2fbf71; --amber:#e8a530; --red:#e05555; --blue:#4c8dff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  nav { display:flex; gap:1.2rem; align-items:center; padding:.8rem 1.2rem;
+        border-bottom:1px solid var(--line); }
+  nav .brand { font-weight:700; margin-right:.5rem; }
+  nav a { color:var(--dim); text-decoration:none; }
+  nav a:hover, nav a.on { color:var(--fg); }
+  main { max-width:960px; margin:1.2rem auto; padding:0 1rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:1rem 1.2rem; margin-bottom:1.2rem; }
+  h1 { font-size:1.15rem; margin:.2rem 0 .8rem; }
+  table { width:100%; border-collapse:collapse; font-size:.92rem; }
+  th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:600; }
+  form.ticket { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+                gap:.6rem; align-items:end; }
+  label { display:block; color:var(--dim); font-size:.8rem; margin-bottom:.2rem; }
+  input, select { width:100%; padding:.45rem .5rem; background:#0b0e13; color:var(--fg);
+                  border:1px solid var(--line); border-radius:6px; font:inherit; }
+  button { padding:.5rem .9rem; border:0; border-radius:6px; background:var(--blue);
+           color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.close { background:var(--red); }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--dim);
+                 padding:.25rem .6rem; font-size:.8rem; }
+  .badge { display:inline-block; padding:.1rem .55rem; border-radius:99px;
+           font-size:.75rem; font-weight:600; }
+  .b-green { background:rgba(47,191,113,.15); color:var(--green); }
+  .b-amber { background:rgba(232,165,48,.15); color:var(--amber); }
+  .b-red { background:rgba(224,85,85,.15); color:var(--red); }
+  .b-dim { background:rgba(139,149,165,.15); color:var(--dim); }
+  .flash { border-left:3px solid var(--blue); padding:.5rem .8rem; margin-bottom:1rem;
+           background:var(--card); border-radius:0 8px 8px 0; }
+  .dim { color:var(--dim); }
+</style>
+</head>
+<body>
+<nav>
+  <span class="brand">KiteCast · Trade Share</span>
+  <a href="/">Console</a>
+  <a href="/board">Board</a>
+  <a href="/friends">Friends</a>
+</nav>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

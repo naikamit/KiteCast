@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Confirmation board{% endblock %}
+{% block body %}
+
+<div class="card">
+  <h1>Per-friend board — who mirrored, who's pending</h1>
+  <p class="dim" style="margin-top:-.5rem">Green = confirmed in their Kite. Amber = sent, not tapped — nudge once, then call. Grey = exit link pre-built, not yet pushed.</p>
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th>Trade</th><th>Leg</th>
+      {% for f in friends %}<th>{{ f['name'] }}{% if not f['active'] %} <span class="dim">(off)</span>{% endif %}</th>{% endfor %}
+    </tr>
+    {% for row in rows %}
+    {% set t = row.trade %}
+    {% for leg in ['ENTRY', 'EXIT'] %}
+    <tr>
+      {% if loop.first %}
+      <td rowspan="2">#{{ t['id'] }} {{ t['side'] }} {{ t['qty'] }} × {{ t['tradingsymbol'] }}<br>
+          <span class="dim">{{ t['status'] }}</span></td>
+      {% endif %}
+      <td>{{ leg }}</td>
+      {% for f in friends %}
+      <td>
+        {% set s = row.shares.get((f['id'], leg)) %}
+        {% if not s %}<span class="dim">—</span>
+        {% elif s['status'] == 'CONFIRMED' %}<span class="badge b-green">✓ {{ s['qty'] }}</span>
+        {% elif s['status'] == 'SENT' %}
+          <span class="badge b-amber">pending {{ s['qty'] }}</span>
+          <form method="post" action="/share/{{ s['id'] }}/nudge" style="display:inline">
+            <button class="ghost" type="submit">{% if s['nudge_count'] > 0 %}📞 call ({{ s['nudge_count'] }}){% else %}nudge{% endif %}</button>
+          </form>
+        {% else %}<span class="badge b-dim">prebuilt {{ s['qty'] }}</span>
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+    {% else %}
+    <tr><td colspan="{{ 2 + friends|length }}" class="dim">Nothing shared yet.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+<script>setTimeout(() => location.replace('/board'), 5000);</script>
+{% endblock %}

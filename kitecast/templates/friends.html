@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Friends{% endblock %}
+{% block body %}
+
+<div class="card">
+  <h1>Friends ({{ friends|length }})</h1>
+  <p class="dim" style="margin-top:-.5rem">Private circle — each friend needs an MCX-enabled Zerodha account, margin, and this bot started in Telegram. Multiplier scales my qty to theirs (1.0 = uniform lots).</p>
+  <table>
+    <tr><th>Name</th><th>Telegram chat id</th><th>Multiplier</th><th>Active</th><th></th></tr>
+    {% for f in friends %}
+    <tr>
+      <form method="post" action="/friends/{{ f['id'] }}">
+        <td>{{ f['name'] }}</td>
+        <td class="dim">{{ f['telegram_chat_id'] }}</td>
+        <td><input name="multiplier" type="number" step="0.05" min="0" value="{{ f['multiplier'] }}" style="max-width:6rem"></td>
+        <td><input name="active" type="checkbox" {% if f['active'] %}checked{% endif %} style="width:auto"></td>
+        <td><button class="ghost" type="submit">Save</button></td>
+      </form>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="dim">No friends yet — add up to 4 below.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h1>Add friend</h1>
+  <form class="ticket" method="post" action="/friends">
+    <div><label>Name</label><input name="name" required></div>
+    <div><label>Telegram chat id</label><input name="telegram_chat_id" required></div>
+    <div><label>Multiplier</label><input name="multiplier" type="number" step="0.05" min="0" value="1.0"></div>
+    <div><button type="submit">Add</button></div>
+  </form>
+</div>
+{% endblock %}

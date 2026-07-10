@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Share console{% endblock %}
+{% block body %}
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+{% if not logged_in %}
+<div class="card">
+  <b>Kite session needed.</b> <span class="dim">Complete the daily Kite Connect login before placing shared trades.</span>
+  <p><a href="/auth/login"><button type="button">Log in to Kite</button></a></p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h1>Ticket — Place &amp; Share</h1>
+  <p class="dim" style="margin-top:-.5rem">Fires on <b>my</b> Kite. On my fill it writes the ledger, pre-builds every friend's exit link, and fans the entry mirror to their phones. Trades placed in the Kite app directly are never shared.</p>
+  <form class="ticket" method="post" action="/trade">
+    <div><label>Contract</label><input name="tradingsymbol" placeholder="CRUDEOIL25JULFUT" required></div>
+    <div><label>Exchange</label>
+      <select name="exchange"><option>MCX</option><option>NFO</option><option>NSE</option><option>BSE</option></select></div>
+    <div><label>Side</label>
+      <select name="side"><option>BUY</option><option>SELL</option></select></div>
+    <div><label>Qty</label><input name="qty" type="number" min="1" required></div>
+    <div><label>Product</label>
+      <select name="product"><option>NRML</option><option>MIS</option><option>CNC</option></select></div>
+    <div><label>Order type</label>
+      <select name="order_type"><option>MARKET</option><option>LIMIT</option></select></div>
+    <div><label>Limit price</label><input name="price" type="number" step="0.05" placeholder="—"></div>
+    <div><button type="submit">Place &amp; Share</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h1>My fills &amp; positions</h1>
+  <table>
+    <tr><th>#</th><th>Contract</th><th>Side</th><th>Qty</th><th>Status</th><th>Entry fill</th><th>Exit fill</th><th></th></tr>
+    {% for t in trades %}
+    <tr>
+      <td>{{ t['id'] }}</td>
+      <td>{{ t['exchange'] }}:{{ t['tradingsymbol'] }}</td>
+      <td>{{ t['side'] }}</td>
+      <td>{{ t['qty'] }}</td>
+      <td>
+        {% if t['status'] == 'PLACED' %}<span class="badge b-amber">FILLING…</span>
+        {% elif t['status'] == 'FILLED' %}<span class="badge b-green">OPEN</span>
+        {% elif t['status'] == 'CLOSING' %}<span class="badge b-amber">CLOSING…</span>
+        {% elif t['status'] == 'CLOSED' %}<span class="badge b-dim">CLOSED</span>
+        {% else %}<span class="badge b-red">{{ t['status'] }}</span>{% endif %}
+      </td>
+      <td>{{ t['entry_fill_price'] or '—' }}</td>
+      <td>{{ t['exit_fill_price'] or '—' }}</td>
+      <td>
+        {% if t['status'] == 'FILLED' %}
+        <form method="post" action="/trade/{{ t['id'] }}/close" style="display:inline"
+              onsubmit="return confirm('Close & Share trade #{{ t['id'] }} at market?')">
+          <button class="close" type="submit">Close &amp; Share</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="dim">No shared trades yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if trades and trades[0]['status'] in ('PLACED', 'CLOSING') %}
+<script>setTimeout(() => location.replace('/'), 2000);</script>
+{% endif %}
+{% endblock %}

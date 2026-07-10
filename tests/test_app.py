@@ -1,0 +1,101 @@
+"""HTTP-level tests: console auth, postback endpoint, mirror page, redirect."""
+
+import base64
+
+import pytest
+from fastapi.testclient import TestClient
+
+from kitecast.app import build_app
+from kitecast.config import settings as app_settings
+from tests.conftest import postback
+
+
+@pytest.fixture
+def client(ledger, kite, telegram, settings, monkeypatch):
+    monkeypatch.setattr(app_settings, "kite_api_key", settings.kite_api_key)
+    monkeypatch.setattr(app_settings, "kite_api_secret", settings.kite_api_secret)
+    monkeypatch.setattr(app_settings, "base_url", settings.base_url)
+    monkeypatch.setattr(app_settings, "console_user", "amit")
+    monkeypatch.setattr(app_settings, "console_password", "pw")
+    monkeypatch.setattr(app_settings, "share_timing_entry", "fill")
+    monkeypatch.setattr(app_settings, "share_timing_exit", "fill")
+    return TestClient(build_app(ledger=ledger, kite=kite, telegram=telegram))
+
+
+def auth():
+    return {"Authorization": "Basic " + base64.b64encode(b"amit:pw").decode()}
+
+
+def test_console_requires_auth(client):
+    assert client.get("/").status_code == 401
+    assert client.get("/board").status_code == 401
+    assert client.get("/", headers=auth()).status_code == 200
+
+
+def test_full_flow_over_http(client, ledger, kite, telegram, friends):
+    # Place & Share from the console.
+    r = client.post("/trade", headers=auth(), data={
+        "tradingsymbol": "crudeoil25julfut", "exchange": "MCX", "side": "BUY",
+        "qty": "100", "product": "NRML", "order_type": "MARKET",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    trade = ledger.trades()[0]
+    assert trade["tradingsymbol"] == "CRUDEOIL25JULFUT"
+
+    # My fill arrives via the (unauthenticated, checksum-verified) postback.
+    r = client.post("/kite/postback", json=postback(kite, trade["entry_order_id"], filled_qty=100))
+    assert r.status_code == 200
+    assert ledger.trade(trade["id"])["status"] == "FILLED"
+    assert len(telegram.sent) == 3
+
+    # Friend opens the mirror link: pre-filled basket form.
+    share = ledger.shares_for_trade(trade["id"], "ENTRY")[0]
+    r = client.get(f"/m/{share['token']}")
+    assert r.status_code == 200
+    assert "kite.zerodha.com/connect/basket" in r.text
+    assert "CRUDEOIL25JULFUT" in r.text
+
+    # Publisher redirect flips them green.
+    r = client.get(f"/kite/redirect?status=success&share_token={share['token']}")
+    assert r.status_code == 200
+    assert ledger.share(share["id"])["status"] == "CONFIRMED"
+
+    # Board shows the confirmation.
+    r = client.get("/board", headers=auth())
+    assert "✓" in r.text
+
+    # Close & Share, then exit fill fans the close mirrors.
+    telegram.sent.clear()
+    r = client.post(f"/trade/{trade['id']}/close", headers=auth(), follow_redirects=False)
+    assert r.status_code == 303
+    exit_order_id = ledger.trade(trade["id"])["exit_order_id"]
+    client.post("/kite/postback", json=postback(kite, exit_order_id, avg_price=7000.0))
+    assert ledger.trade(trade["id"])["status"] == "CLOSED"
+    assert len(telegram.sent) == 3
+
+
+def test_mirror_unknown_token_404(client):
+    assert client.get("/m/nope").status_code == 404
+
+
+def test_failed_basket_redirect_does_not_confirm(client, ledger, kite, telegram, friends):
+    client.post("/trade", headers=auth(), data={
+        "tradingsymbol": "GOLD25AUGFUT", "exchange": "MCX", "side": "SELL",
+        "qty": "10", "product": "NRML", "order_type": "MARKET",
+    }, follow_redirects=False)
+    trade = ledger.trades()[0]
+    client.post("/kite/postback", json=postback(kite, trade["entry_order_id"], filled_qty=10))
+    share = ledger.shares_for_trade(trade["id"], "ENTRY")[0]
+
+    r = client.get(f"/kite/redirect?status=cancelled&share_token={share['token']}")
+    assert r.status_code == 200
+    assert ledger.share(share["id"])["status"] == "SENT"  # still amber
+
+
+def test_friends_admin(client, ledger):
+    r = client.post("/friends", headers=auth(), data={
+        "name": "Ravi", "telegram_chat_id": "42", "multiplier": "0.5",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    f = ledger.friends()[0]
+    assert (f["name"], f["telegram_chat_id"], f["multiplier"]) == ("Ravi", "42", 0.5)

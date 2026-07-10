@@ -1,0 +1,18 @@
+# systemd unit — always-on VPS (NFR-2). Install:
+#   sudo cp deploy/kitecast.service /etc/systemd/system/
+#   sudo systemctl enable --now kitecast
+[Unit]
+Description=KiteCast Trade Share console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kitecast
+WorkingDirectory=/opt/kitecast
+EnvironmentFile=/opt/kitecast/.env
+ExecStart=/opt/kitecast/.venv/bin/uvicorn run:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

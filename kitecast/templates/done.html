@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ 'Mirrored ✓' if confirmed else 'Not confirmed' }}</title>
+<style>
+  body { margin:0; background:#0e1116; color:#e6e9ee; display:flex; min-height:100vh;
+         align-items:center; justify-content:center;
+         font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .card { background:#171c24; border:1px solid #2a3240; border-radius:12px;
+          padding:1.6rem; max-width:22rem; text-align:center; }
+  .ok { color:#2fbf71; font-size:1.4rem; font-weight:700; }
+  .bad { color:#e8a530; font-size:1.2rem; font-weight:700; }
+  .dim { color:#8b95a5; font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  {% if confirmed %}
+  <div class="ok">✓ Mirrored</div>
+  <p class="dim">Your order went through in your Kite. Amit's board just turned green — you're done.</p>
+  {% else %}
+  <div class="bad">Order not confirmed</div>
+  <p class="dim">The order didn't complete (cancelled, or already confirmed earlier). Reopen the link from Telegram to try again.</p>
+  {% endif %}
+</div>
+</body>
+</html>
