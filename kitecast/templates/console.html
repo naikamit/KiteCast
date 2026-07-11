@@ -30,7 +30,13 @@
     <div><label>Order type</label>
       <select name="order_type" id="f_ordertype"><option>MARKET</option><option>LIMIT</option></select></div>
     <div><label>Limit price</label><input name="price" id="f_price" type="number" step="0.05" placeholder="—"></div>
-    <div><button type="submit">Place &amp; Share</button></div>
+    <div><button type="submit" id="submitbtn">Place &amp; Share</button></div>
+    <div style="grid-column:1/-1">
+      <label style="display:inline-flex; align-items:center; gap:.4rem; font-size:.85rem; cursor:pointer">
+        <input type="checkbox" name="share_only" id="f_shareonly" style="width:auto">
+        Share only — send mirror links to friends without placing my order
+      </label>
+    </div>
   </form>
   <div id="cinfo" class="cinfo" hidden></div>
 </div>
@@ -96,6 +102,8 @@ async function select(x) {
 }
 
 document.addEventListener('click', e => { if (!results.contains(e.target) && e.target !== search) results.hidden = true; });
+$('f_shareonly').addEventListener('change', () =>
+  $('submitbtn').textContent = $('f_shareonly').checked ? 'Share only' : 'Place & Share');
 $('ticket').addEventListener('submit', e => {
   if (!$('f_symbol').value) { e.preventDefault(); search.focus(); results.hidden = false; }
 });
@@ -114,6 +122,7 @@ $('ticket').addEventListener('submit', e => {
       <td>
         {% if t['status'] == 'PLACED' %}<span class="badge b-amber">FILLING…</span>
         {% elif t['status'] == 'FILLED' %}<span class="badge b-green">OPEN</span>
+        {% elif t['status'] == 'SHARED' %}<span class="badge b-green">SHARED</span>
         {% elif t['status'] == 'CLOSING' %}<span class="badge b-amber">CLOSING…</span>
         {% elif t['status'] == 'CLOSED' %}<span class="badge b-dim">CLOSED</span>
         {% else %}<span class="badge b-red">{{ t['status'] }}</span>{% endif %}
@@ -125,6 +134,11 @@ $('ticket').addEventListener('submit', e => {
         <form method="post" action="/trade/{{ t['id'] }}/close" style="display:inline"
               onsubmit="return confirm('Close & Share trade #{{ t['id'] }} at market?')">
           <button class="close" type="submit">Close &amp; Share</button>
+        </form>
+        {% elif t['status'] == 'SHARED' %}
+        <form method="post" action="/trade/{{ t['id'] }}/share-close" style="display:inline"
+              onsubmit="return confirm('Share the close for trade #{{ t['id'] }}? (no order on my account)')">
+          <button class="close" type="submit">Share close</button>
         </form>
         {% endif %}
       </td>

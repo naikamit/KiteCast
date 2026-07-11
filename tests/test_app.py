@@ -98,6 +98,27 @@ def test_full_flow_over_http(client, ledger, kite, telegram, friends):
     assert len(telegram.sent) == 3
 
 
+def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
+    r = client.post("/trade", data={
+        "tradingsymbol": "CRUDEOIL25JULFUT", "exchange": "MCX", "side": "BUY",
+        "qty": "100", "product": "NRML", "order_type": "MARKET", "share_only": "on",
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    assert kite.orders == []
+    trade = ledger.trades()[0]
+    assert trade["status"] == "SHARED"
+    assert len(telegram.sent) == 3
+
+    # Console offers "Share close" for it; the route pushes exit mirrors.
+    assert "share-close" in client.get("/").text
+    telegram.sent.clear()
+    r = client.post(f"/trade/{trade['id']}/share-close", follow_redirects=False)
+    assert r.status_code == 303
+    assert ledger.trade(trade["id"])["status"] == "CLOSED"
+    assert len(telegram.sent) == 3
+    assert kite.orders == []
+
+
 def test_mirror_unknown_token_404(client):
     assert client.get("/m/nope").status_code == 404
 

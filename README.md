@@ -123,9 +123,16 @@ fans mirrors when *my* order fills; `placement` fans the instant I place.
   cancelled basket stays amber.
 - **Commodity options:** the exchange rejects bare MARKET orders on MCX
   options, so a MARKET ticket on one is placed as a protected LIMIT at
-  LTP ± `MARKET_PROTECTION_PCT` (default 5%), tick-rounded — the same thing
-  the Kite app's market protection does. Friend mirrors re-anchor to live LTP
-  at tap time (fallback: my entry fill price if my session has expired).
+  LTP ± `MARKET_PROTECTION_PCT_ENTRY` (default 5%) /
+  `MARKET_PROTECTION_PCT_EXIT` (default 10%, wider because exits are
+  at-any-cost), tick-rounded — the same thing the Kite app's market
+  protection does. Friend mirrors re-anchor to live LTP at tap time
+  (fallback: my entry fill price if my session has expired).
+- **Share only:** the ticket's "Share only" checkbox fans mirror links to
+  friends *without* placing my order — for trades I already hold, or ideas I
+  want to share but not take myself. The ledger row (status `SHARED`) has no
+  order/fill of mine; "Share close" later pushes the matching close mirrors,
+  again without touching my account.
 
 ## Development
 

@@ -24,8 +24,13 @@ class Settings:
     # when the host itself has the whitelisted static IP.
     kite_order_proxy: str = field(default_factory=lambda: _env("KITE_ORDER_PROXY"))
     # MCX options reject bare MARKET orders; we emulate the Kite app's market
-    # protection with a LIMIT at LTP ± this percent (wide = at-any-cost).
-    market_protection_pct: float = field(default_factory=lambda: float(_env("MARKET_PROTECTION_PCT", "5")))
+    # protection with a LIMIT at LTP ± this percent. Entries cap slippage
+    # (tight); exits are at-any-cost per the PRD (wide). MARKET_PROTECTION_PCT
+    # (no suffix) overrides the default for both.
+    market_protection_pct_entry: float = field(default_factory=lambda: float(
+        _env("MARKET_PROTECTION_PCT_ENTRY", _env("MARKET_PROTECTION_PCT", "5"))))
+    market_protection_pct_exit: float = field(default_factory=lambda: float(
+        _env("MARKET_PROTECTION_PCT_EXIT", _env("MARKET_PROTECTION_PCT", "10"))))
 
     @property
     def postback_url(self) -> str:

@@ -176,7 +176,7 @@ def test_commodity_option_market_order_becomes_protected_limit(service, kite, te
     close = kite.orders[-1]
     assert close["transaction_type"] == "SELL"
     assert close["order_type"] == "LIMIT"
-    assert close["price"] == 5937.5      # LTP 6250 * 0.95
+    assert close["price"] == 5625.0      # LTP 6250 * 0.90 (exit pct defaults wider)
 
     # Friend mirrors are protected LIMITs too, anchored at tap time.
     share = ledger.shares_for_trade(trade_id, "ENTRY")[0]
@@ -185,7 +185,7 @@ def test_commodity_option_market_order_becomes_protected_limit(service, kite, te
     exit_share = ledger.shares_for_trade(trade_id, "EXIT")[0]
     order = service.build_mirror_order(exit_share, ledger.trade(trade_id))
     assert order["transaction_type"] == "SELL"
-    assert order["order_type"] == "LIMIT" and order["price"] == 5937.5
+    assert order["order_type"] == "LIMIT" and order["price"] == 5625.0
 
 
 def test_futures_market_orders_stay_market(service, kite, friends):
@@ -211,6 +211,51 @@ def test_protected_limit_falls_back_to_fill_price_without_session(service, kite,
     order = service.build_mirror_order(share, ledger.trade(trade_id))
     assert order["order_type"] == "LIMIT"
     assert order["price"] == 6300.0      # entry fill 6000 * 1.05
+
+
+def test_share_only_fans_without_placing_my_order(service, kite, telegram, friends, ledger):
+    trade_id = service.share_only(
+        tradingsymbol="CRUDEOIL25JULFUT", exchange="MCX", side="BUY",
+        qty=100, product="NRML", order_type="MARKET", price=None,
+    )
+    assert kite.orders == []                       # nothing on MY account
+    trade = ledger.trade(trade_id)
+    assert trade["status"] == "SHARED"
+    assert trade["entry_order_id"] is None
+
+    # Mirrors pushed immediately (no fill to wait for), exits pre-built.
+    entry_shares = ledger.shares_for_trade(trade_id, "ENTRY")
+    assert [s["qty"] for s in entry_shares] == [100, 50, 200]
+    assert all(s["status"] == "SENT" for s in entry_shares)
+    assert len(telegram.sent) == 3
+    assert all(s["status"] == "PREBUILT" for s in ledger.shares_for_trade(trade_id, "EXIT"))
+
+    # Share close: pushes exit mirrors, still no order on my account.
+    telegram.sent.clear()
+    service.share_only_close(trade_id)
+    assert kite.orders == []
+    assert ledger.trade(trade_id)["status"] == "CLOSED"
+    assert len(telegram.sent) == 3
+    assert all("Close now" in msg[2] for msg in telegram.sent)
+
+    # Can't share-close twice, and Close & Share rejects share-only trades.
+    try:
+        service.share_only_close(trade_id)
+        assert False
+    except ValueError:
+        pass
+
+
+def test_close_and_share_rejects_share_only_trade(service, kite, friends):
+    trade_id = service.share_only(
+        tradingsymbol="CRUDEOIL25JULFUT", exchange="MCX", side="BUY",
+        qty=100, product="NRML", order_type="MARKET", price=None,
+    )
+    try:
+        service.close_and_share(trade_id)
+        assert False, "close_and_share must not fire an order for a share-only trade"
+    except ValueError:
+        pass
 
 
 def test_duplicate_fill_postback_does_not_refan(service, kite, telegram, friends, ledger):

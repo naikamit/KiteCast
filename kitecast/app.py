@@ -50,18 +50,31 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     def place_trade(tradingsymbol: str = Form(...), exchange: str = Form("MCX"),
                     side: str = Form(...), qty: int = Form(...),
                     product: str = Form("NRML"), order_type: str = Form("MARKET"),
-                    price: float | None = Form(None)):
+                    price: float | None = Form(None), share_only: str = Form("off")):
         if side not in ("BUY", "SELL") or qty <= 0:
             raise HTTPException(400, "Invalid ticket")
+        ticket = dict(
+            tradingsymbol=tradingsymbol.strip().upper(), exchange=exchange,
+            side=side, qty=qty, product=product, order_type=order_type,
+            price=price if order_type == "LIMIT" else None,
+        )
         try:
-            trade_id = service.place_and_share(
-                tradingsymbol=tradingsymbol.strip().upper(), exchange=exchange,
-                side=side, qty=qty, product=product, order_type=order_type,
-                price=price if order_type == "LIMIT" else None,
-            )
+            if share_only == "on":
+                trade_id = service.share_only(**ticket)
+                return RedirectResponse(f"/?flash=Shared to friends, no order placed (trade #{trade_id})",
+                                        status_code=303)
+            trade_id = service.place_and_share(**ticket)
         except KiteError as e:
             return RedirectResponse(f"/?flash=Order failed: {e}", status_code=303)
         return RedirectResponse(f"/?flash=Placed & sharing (trade #{trade_id})", status_code=303)
+
+    @app.post("/trade/{trade_id}/share-close")
+    def share_close(trade_id: int):
+        try:
+            service.share_only_close(trade_id)
+        except ValueError as e:
+            return RedirectResponse(f"/?flash=Share close failed: {e}", status_code=303)
+        return RedirectResponse(f"/?flash=Close shared to friends (trade #{trade_id})", status_code=303)
 
     @app.post("/trade/{trade_id}/close")
     def close_trade(trade_id: int):

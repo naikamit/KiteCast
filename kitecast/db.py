@@ -127,14 +127,20 @@ class Ledger:
 
     def create_trade(self, *, tradingsymbol: str, exchange: str, side: str, qty: int,
                      product: str, order_type: str, price: float | None,
-                     entry_order_id: str) -> int:
+                     entry_order_id: str | None = None, status: str = "PLACED") -> int:
+        """entry_order_id is None for share-only trades — nothing was placed
+        on my account, so no postback will ever match this row."""
         cur = self._exec(
             """INSERT INTO trades (tradingsymbol, exchange, side, qty, product, order_type,
                                    price, status, entry_order_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'PLACED', ?, ?)""",
-            (tradingsymbol, exchange, side, qty, product, order_type, price, entry_order_id, utcnow()),
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tradingsymbol, exchange, side, qty, product, order_type, price, status,
+             entry_order_id, utcnow()),
         )
         return cur.lastrowid
+
+    def set_status(self, trade_id: int, status: str) -> None:
+        self._exec("UPDATE trades SET status=? WHERE id=?", (status, trade_id))
 
     def trade(self, trade_id: int) -> sqlite3.Row | None:
         rows = self._query("SELECT * FROM trades WHERE id=?", (trade_id,))

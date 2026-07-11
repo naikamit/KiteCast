@@ -26,7 +26,7 @@ class TradeShareService:
         self.store = store  # InstrumentStore, for tick sizes
 
     def _market_protected(self, *, exchange: str, tradingsymbol: str, side: str,
-                          order_type: str, price: float | None,
+                          order_type: str, price: float | None, pct: float,
                           ref_fallback: float | None = None) -> tuple[str, float | None]:
         """MCX options reject bare MARKET orders (exchange rule). Emulate the
         Kite app's market protection: LIMIT at LTP ± pct, tick-rounded.
@@ -47,7 +47,7 @@ class TradeShareService:
                 tick = (inst and inst["tick_size"]) or tick
             except Exception:
                 pass
-        limit = basket.protected_limit(side, ref, self.settings.market_protection_pct, tick)
+        limit = basket.protected_limit(side, ref, pct, tick)
         log.info("market protection %s %s: MARKET -> LIMIT %.2f (ref %.2f)", side, tradingsymbol, limit, ref)
         return "LIMIT", limit
 
@@ -61,6 +61,7 @@ class TradeShareService:
         eff_type, eff_price = self._market_protected(
             exchange=exchange, tradingsymbol=tradingsymbol, side=side,
             order_type=order_type, price=price,
+            pct=self.settings.market_protection_pct_entry,
         )
         order_id = self.kite.place_order(
             tradingsymbol=tradingsymbol, exchange=exchange, transaction_type=side,
@@ -78,6 +79,32 @@ class TradeShareService:
             self._push_leg(trade_id, "ENTRY")
         return trade_id
 
+    # ---- share only: fan mirrors without touching my account ----
+
+    def share_only(self, *, tradingsymbol: str, exchange: str, side: str,
+                   qty: int, product: str, order_type: str,
+                   price: float | None) -> int:
+        """Fan entry mirrors to friends WITHOUT placing my own order. No
+        Kite order, no postback — mirrors push immediately, and the ledger
+        row (status SHARED) exists so the exit can be shared later."""
+        trade_id = self.ledger.create_trade(
+            tradingsymbol=tradingsymbol, exchange=exchange, side=side, qty=qty,
+            product=product, order_type=order_type, price=price, status="SHARED",
+        )
+        log.info("share-only entry trade=%s %s %s x%s", trade_id, side, tradingsymbol, qty)
+        self._build_shares(trade_id)
+        self._push_leg(trade_id, "ENTRY")
+        return trade_id
+
+    def share_only_close(self, trade_id: int) -> None:
+        """Push the matching close mirrors for a share-only trade."""
+        trade = self.ledger.trade(trade_id)
+        if trade is None or trade["status"] != "SHARED":
+            raise ValueError(f"Trade {trade_id} is not share-only open "
+                             f"(status={trade['status'] if trade else 'missing'})")
+        self._push_leg(trade_id, "EXIT")
+        self.ledger.set_status(trade_id, "CLOSED")
+
     # ---- exit: Close & Share ----
 
     def close_and_share(self, trade_id: int) -> str:
@@ -92,6 +119,7 @@ class TradeShareService:
         eff_type, eff_price = self._market_protected(
             exchange=trade["exchange"], tradingsymbol=trade["tradingsymbol"],
             side=close_side, order_type="MARKET", price=None,
+            pct=self.settings.market_protection_pct_exit,
             ref_fallback=trade["entry_fill_price"],
         )
         order_id = self.kite.place_order(
@@ -155,6 +183,8 @@ class TradeShareService:
             exchange=trade["exchange"], tradingsymbol=trade["tradingsymbol"],
             side=order["transaction_type"], order_type=order["order_type"],
             price=order.get("price"), ref_fallback=trade["entry_fill_price"],
+            pct=(self.settings.market_protection_pct_entry if share["leg"] == "ENTRY"
+                 else self.settings.market_protection_pct_exit),
         )
         if eff_type == "LIMIT" and order["order_type"] == "MARKET":
             order["order_type"] = "LIMIT"
