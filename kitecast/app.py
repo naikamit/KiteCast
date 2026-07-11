@@ -79,7 +79,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         for trade in ledger.trades():
             shares = {(s["friend_id"], s["leg"]): s for s in ledger.shares_for_trade(trade["id"])}
             rows.append({"trade": trade, "shares": shares})
-        return templates.TemplateResponse(request, "board.html", {"rows": rows, "friends": friends})
+        return templates.TemplateResponse(request, "board.html", {
+            "rows": rows, "friends": friends, "base_url": settings.base_url,
+        })
 
     @app.post("/share/{share_id}/nudge")
     def nudge(share_id: int):
@@ -94,7 +96,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
 
     @app.post("/friends")
     def add_friend(name: str = Form(...),
-                   telegram_chat_id: str = Form(...), multiplier: float = Form(1.0)):
+                   telegram_chat_id: str = Form(""), multiplier: float = Form(1.0)):
         ledger.add_friend(name.strip(), telegram_chat_id.strip(), multiplier)
         return RedirectResponse("/friends", status_code=303)
 

@@ -149,13 +149,15 @@ class TradeShareService:
             self._build_shares(trade_id)  # placement-timing exits before fill
         trade = self.ledger.trade(trade_id)
         shares = [s for s in self.ledger.shares_for_trade(trade_id, leg) if s["status"] != "CONFIRMED"]
-        messages = []
+        pushable, messages = [], []
         for share in shares:
             friend = self.ledger.friend(share["friend_id"])
-            messages.append(self._message(trade, friend, share))
-        results = self.telegram.fan_out(messages)
-        for share, sent in zip(shares, results):
+            if friend["telegram_chat_id"]:
+                pushable.append(share)
+                messages.append(self._message(trade, friend, share))
+            # No chat id: manual-share friend — link is copyable on the board.
             self.ledger.mark_share_sent(share["id"])
+        for share, sent in zip(pushable, self.telegram.fan_out(messages)):
             if not sent:
                 log.warning("telegram push failed share=%s", share["id"])
 

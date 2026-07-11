@@ -83,6 +83,13 @@ A systemd unit is provided in `deploy/kitecast.service`. Put TLS in front
 2. Friend taps → lands on the pre-filled basket in their own Kite → confirms.
    The redirect flips them **green** on `/board`; stragglers stay **amber**
    with a nudge button (re-ping first, the button then escalates to *call*).
+   **Alternative to Telegram push:** every pending cell on `/board` also has a
+   **🔗 copy** button (copies the friend's mirror URL —
+   `BASE_URL/m/<token>` — paste it anywhere) and a **WA** button that opens
+   WhatsApp with the message pre-written. Leave a friend's Telegram chat id
+   blank to make them manual-share only. Mirror links are per-friend and
+   per-leg — send each friend *their* link, since it carries their scaled qty
+   and flips *their* cell green.
 3. Exit: **Close & Share** on the open trade. My close fires at-any-cost; on
    my fill every friend gets the matching **Close now** push.
 

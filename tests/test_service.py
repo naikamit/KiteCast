@@ -143,6 +143,20 @@ def test_nudge_repings_straggler(service, kite, telegram, friends, ledger):
     assert service.nudge(share["id"]) is False
 
 
+def test_manual_share_friend_gets_link_not_push(service, kite, telegram, ledger):
+    """A friend without a Telegram chat id is manual-share: their mirror link
+    is created and copyable from the board, but no push goes out."""
+    ledger.add_friend("Ravi", "1001")
+    ledger.add_friend("NoTelegram", "")
+    trade_id = place_and_fill(service, kite)
+
+    shares = ledger.shares_for_trade(trade_id, "ENTRY")
+    assert len(shares) == 2
+    assert all(s["status"] == "SENT" for s in shares)
+    assert len(telegram.sent) == 1          # only Ravi got a push
+    assert telegram.sent[0][0] == "1001"
+
+
 def test_duplicate_fill_postback_does_not_refan(service, kite, telegram, friends, ledger):
     trade_id = place_and_fill(service, kite)
     trade = ledger.trade(trade_id)

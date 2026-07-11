@@ -25,12 +25,21 @@
         {% set s = row.shares.get((f['id'], leg)) %}
         {% if not s %}<span class="dim">—</span>
         {% elif s['status'] == 'CONFIRMED' %}<span class="badge b-green">✓ {{ s['qty'] }}</span>
-        {% elif s['status'] == 'SENT' %}
-          <span class="badge b-amber">pending {{ s['qty'] }}</span>
-          <form method="post" action="/share/{{ s['id'] }}/nudge" style="display:inline">
-            <button class="ghost" type="submit">{% if s['nudge_count'] > 0 %}📞 call ({{ s['nudge_count'] }}){% else %}nudge{% endif %}</button>
-          </form>
-        {% else %}<span class="badge b-dim">prebuilt {{ s['qty'] }}</span>
+        {% else %}
+          {% if s['status'] == 'SENT' %}<span class="badge b-amber">pending {{ s['qty'] }}</span>
+          {% else %}<span class="badge b-dim">prebuilt {{ s['qty'] }}</span>{% endif %}
+          {% set url = base_url ~ '/m/' ~ s['token'] %}
+          {% set action = ('CLOSE' if leg == 'EXIT' else t['side']) ~ ' ' ~ s['qty'] ~ ' × ' ~ t['tradingsymbol'] %}
+          <span style="white-space:nowrap">
+            <button class="ghost copy" type="button" data-url="{{ url }}">🔗 copy</button>
+            <a class="ghost wa" target="_blank"
+               href="https://wa.me/?text={{ (action ~ ' — one tap to confirm in your Kite: ' ~ url) | urlencode }}">WA</a>
+            {% if s['status'] == 'SENT' and f['telegram_chat_id'] %}
+            <form method="post" action="/share/{{ s['id'] }}/nudge" style="display:inline">
+              <button class="ghost" type="submit">{% if s['nudge_count'] > 0 %}📞 call ({{ s['nudge_count'] }}){% else %}nudge{% endif %}</button>
+            </form>
+            {% endif %}
+          </span>
         {% endif %}
       </td>
       {% endfor %}
@@ -42,5 +51,17 @@
   </table>
   </div>
 </div>
-<script>setTimeout(() => location.replace('/board'), 5000);</script>
+<script>
+document.querySelectorAll('.copy').forEach(btn => btn.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(btn.dataset.url); }
+  catch (e) { prompt('Copy the mirror link:', btn.dataset.url); return; }
+  const old = btn.textContent;
+  btn.textContent = '✓ copied';
+  setTimeout(() => { btn.textContent = old; }, 1500);
+}));
+// Pause auto-refresh briefly after a copy so the feedback is visible.
+let lastCopy = 0;
+document.addEventListener('click', () => { lastCopy = Date.now(); }, true);
+setInterval(() => { if (Date.now() - lastCopy > 4000) location.replace('/board'); }, 5000);
+</script>
 {% endblock %}

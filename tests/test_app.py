@@ -80,8 +80,13 @@ def test_full_flow_over_http(client, ledger, kite, telegram, friends):
     assert r.status_code == 200
     assert ledger.share(share["id"])["status"] == "CONFIRMED"
 
-    # Board shows the confirmation.
-    assert "✓" in client.get("/board").text
+    # Board shows the confirmation, and pending cells carry a copyable
+    # mirror URL plus a WhatsApp share link.
+    board = client.get("/board").text
+    assert "✓" in board
+    pending = ledger.shares_for_trade(trade["id"], "ENTRY")[1]
+    assert f"https://vps.test/m/{pending['token']}" in board
+    assert "wa.me/?text=" in board
 
     # Close & Share, then exit fill fans the close mirrors.
     telegram.sent.clear()

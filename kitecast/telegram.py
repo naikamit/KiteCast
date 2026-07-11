@@ -16,8 +16,9 @@ class TelegramClient:
         self.bot_token = bot_token
 
     def send(self, chat_id: str, text: str, button_text: str, url: str) -> bool:
-        """Send one push with a single tap-to-mirror button."""
-        if not self.bot_token:
+        """Send one push with a single tap-to-mirror button. Friends without a
+        chat id are manual-share (copy link / WhatsApp from the board)."""
+        if not self.bot_token or not chat_id:
             return False
         try:
             resp = httpx.post(
