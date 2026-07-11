@@ -146,6 +146,10 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             return RedirectResponse("/?flash=Kite session ready", status_code=303)
         raise HTTPException(400, "Unrecognised redirect")
 
+    @app.get("/healthz")
+    def healthz():
+        return {"ok": True}
+
     # ---- friend side: one-tap mirror page ----
 
     @app.get("/m/{token}", response_class=HTMLResponse)
