@@ -104,13 +104,15 @@ async function select(x) {
 document.addEventListener('click', e => { if (!results.contains(e.target) && e.target !== search) results.hidden = true; });
 $('f_shareonly').addEventListener('change', () =>
   $('submitbtn').textContent = $('f_shareonly').checked ? 'Share only' : 'Place & Share');
-document.querySelectorAll('.copy').forEach(btn => btn.addEventListener('click', async () => {
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
   try { await navigator.clipboard.writeText(btn.dataset.url); }
-  catch (e) { prompt('Copy the mirror link:', btn.dataset.url); return; }
+  catch (err) { prompt('Copy the mirror link:', btn.dataset.url); return; }
   const old = btn.textContent;
   btn.textContent = '✓ copied';
   setTimeout(() => { btn.textContent = old; }, 1500);
-}));
+});
 $('ticket').addEventListener('submit', e => {
   if (!$('f_symbol').value) { e.preventDefault(); search.focus(); results.hidden = false; }
 });

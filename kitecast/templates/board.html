@@ -52,13 +52,15 @@
   </div>
 </div>
 <script>
-document.querySelectorAll('.copy').forEach(btn => btn.addEventListener('click', async () => {
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
   try { await navigator.clipboard.writeText(btn.dataset.url); }
-  catch (e) { prompt('Copy the mirror link:', btn.dataset.url); return; }
+  catch (err) { prompt('Copy the mirror link:', btn.dataset.url); return; }
   const old = btn.textContent;
   btn.textContent = '✓ copied';
   setTimeout(() => { btn.textContent = old; }, 1500);
-}));
+});
 // Pause auto-refresh briefly after a copy so the feedback is visible.
 let lastCopy = 0;
 document.addEventListener('click', () => { lastCopy = Date.now(); }, true);
