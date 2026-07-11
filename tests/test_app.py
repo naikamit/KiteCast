@@ -25,6 +25,13 @@ def test_console_pages_open(client):
     assert client.get("/healthz").json() == {"ok": True}
 
 
+def test_favicon_served(client):
+    r = client.get("/favicon.ico")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith(("image/png", "image/svg"))
+    assert client.get("/apple-touch-icon.png").status_code == 200
+
+
 def test_instrument_search_api(client):
     hits = client.get("/api/instruments?q=crudeoil fut").json()
     assert hits[0]["tradingsymbol"] == "CRUDEOIL25JULFUT"

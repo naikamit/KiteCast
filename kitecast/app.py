@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import basket
@@ -206,6 +206,19 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
+
+    # ---- favicon: real artwork (static/icon.png) if present, else the
+    # ---- bundled SVG placeholder in the same palette ----
+
+    static_dir = Path(__file__).parent / "static"
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    @app.get("/apple-touch-icon.png", include_in_schema=False)
+    def favicon():
+        icon_png = static_dir / "icon.png"
+        if icon_png.exists():
+            return FileResponse(icon_png, media_type="image/png")
+        return FileResponse(static_dir / "favicon.svg", media_type="image/svg+xml")
 
     # ---- friend side: one-tap mirror page ----
 

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Placeholder mark in the brand palette (steel blue / cream / navy / red).
+       Drop the real artwork in this directory as icon.png and it takes over. -->
+  <rect width="64" height="64" rx="12" fill="#5b93b8"/>
+  <!-- ears -->
+  <path d="M14 26 L20 8 L30 20 Z" fill="#f4e9c8" stroke="#16283f" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M50 26 L44 8 L34 20 Z" fill="#f4e9c8" stroke="#16283f" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- head -->
+  <circle cx="32" cy="38" r="20" fill="#f4e9c8" stroke="#16283f" stroke-width="2.5"/>
+  <!-- bandana -->
+  <path d="M12.5 34 Q32 22 51.5 34 L50 26.5 Q32 16 14 26.5 Z" fill="#d7402b" stroke="#16283f" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- eyes -->
+  <circle cx="24.5" cy="41" r="3.4" fill="#16283f"/>
+  <circle cx="39.5" cy="41" r="3.4" fill="#16283f"/>
+  <circle cx="25.6" cy="40" r="1.1" fill="#f4e9c8"/>
+  <circle cx="40.6" cy="40" r="1.1" fill="#f4e9c8"/>
+  <!-- nose + mouth -->
+  <path d="M30 48 L34 48 L32 50.5 Z" fill="#16283f"/>
+  <path d="M32 50.5 Q32 53 29 53.5 M32 50.5 Q32 53 35 53.5" fill="none" stroke="#16283f" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- whiskers -->
+  <path d="M10 44 L20 45 M10 49 L20 48 M54 44 L44 45 M54 49 L44 48" stroke="#16283f" stroke-width="1.6" stroke-linecap="round"/>
+</svg>
