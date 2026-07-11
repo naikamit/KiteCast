@@ -1,19 +1,19 @@
 """FastAPI app: Share console, per-friend board, Kite postback + redirect,
-friend mirror pages. Console routes sit behind HTTP Basic auth; the postback
-is checksum-verified and the mirror/redirect routes are token-scoped."""
+friend mirror pages. The postback is checksum-verified and the
+mirror/redirect routes are token-scoped. The console itself is
+unauthenticated — keep the URL private."""
 
 import logging
-import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
 from . import basket
 from .config import settings
 from .db import Ledger
+from .instruments import InstrumentStore
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
 from .telegram import TelegramClient
@@ -21,7 +21,6 @@ from .telegram import TelegramClient
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-security = HTTPBasic()
 
 
 def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
@@ -31,22 +30,15 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                               access_token=ledger.kv_get("access_token"))
     telegram = telegram or TelegramClient(settings.telegram_bot_token)
     service = TradeShareService(ledger, kite, telegram, settings)
+    store = InstrumentStore(kite)
 
     app = FastAPI(title="KiteCast Trade Share")
     app.state.service = service
 
-    def console_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-        ok_user = secrets.compare_digest(credentials.username, settings.console_user)
-        ok_pass = bool(settings.console_password) and secrets.compare_digest(
-            credentials.password, settings.console_password)
-        if not (ok_user and ok_pass):
-            raise HTTPException(status_code=401, headers={"WWW-Authenticate": "Basic"})
-        return credentials.username
-
     # ---- my side: Share console ----
 
     @app.get("/", response_class=HTMLResponse)
-    def console(request: Request, _: str = Depends(console_auth)):
+    def console(request: Request):
         return templates.TemplateResponse(request, "console.html", {
             "trades": ledger.trades(),
             "logged_in": kite.access_token is not None,
@@ -54,8 +46,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         })
 
     @app.post("/trade")
-    def place_trade(_: str = Depends(console_auth),
-                    tradingsymbol: str = Form(...), exchange: str = Form("MCX"),
+    def place_trade(tradingsymbol: str = Form(...), exchange: str = Form("MCX"),
                     side: str = Form(...), qty: int = Form(...),
                     product: str = Form("NRML"), order_type: str = Form("MARKET"),
                     price: float | None = Form(None)):
@@ -72,7 +63,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return RedirectResponse(f"/?flash=Placed & sharing (trade #{trade_id})", status_code=303)
 
     @app.post("/trade/{trade_id}/close")
-    def close_trade(trade_id: int, _: str = Depends(console_auth)):
+    def close_trade(trade_id: int):
         try:
             service.close_and_share(trade_id)
         except (KiteError, ValueError) as e:
@@ -82,7 +73,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     # ---- my side: confirmation dashboard ----
 
     @app.get("/board", response_class=HTMLResponse)
-    def board(request: Request, _: str = Depends(console_auth)):
+    def board(request: Request):
         friends = ledger.friends()
         rows = []
         for trade in ledger.trades():
@@ -91,32 +82,72 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return templates.TemplateResponse(request, "board.html", {"rows": rows, "friends": friends})
 
     @app.post("/share/{share_id}/nudge")
-    def nudge(share_id: int, _: str = Depends(console_auth)):
+    def nudge(share_id: int):
         service.nudge(share_id)
         return RedirectResponse("/board", status_code=303)
 
     # ---- my side: friends admin ----
 
     @app.get("/friends", response_class=HTMLResponse)
-    def friends_page(request: Request, _: str = Depends(console_auth)):
+    def friends_page(request: Request):
         return templates.TemplateResponse(request, "friends.html", {"friends": ledger.friends()})
 
     @app.post("/friends")
-    def add_friend(_: str = Depends(console_auth), name: str = Form(...),
+    def add_friend(name: str = Form(...),
                    telegram_chat_id: str = Form(...), multiplier: float = Form(1.0)):
         ledger.add_friend(name.strip(), telegram_chat_id.strip(), multiplier)
         return RedirectResponse("/friends", status_code=303)
 
     @app.post("/friends/{friend_id}")
-    def update_friend(friend_id: int, _: str = Depends(console_auth),
+    def update_friend(friend_id: int,
                       multiplier: float = Form(1.0), active: str = Form("off")):
         ledger.update_friend(friend_id, multiplier=multiplier, active=(active == "on"))
         return RedirectResponse("/friends", status_code=303)
 
+    # ---- contract data for the ticket (live Kite instrument master + quotes) ----
+
+    @app.get("/api/instruments")
+    def search_instruments(q: str = ""):
+        try:
+            return store.search(q)
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+
+    @app.get("/api/contract")
+    def contract_info(exchange: str, tradingsymbol: str):
+        try:
+            inst = store.get(exchange, tradingsymbol)
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+        if inst is None:
+            raise HTTPException(404, "Unknown contract")
+        key = f"{inst['exchange']}:{inst['tradingsymbol']}"
+        try:
+            q = kite.quote(key).get(key, {})
+        except KiteError:
+            q = {}  # instrument details still useful without a live quote
+        depth = q.get("depth") or {}
+        best_bid = (depth.get("buy") or [{}])[0]
+        best_ask = (depth.get("sell") or [{}])[0]
+        return {
+            **inst,
+            "quote": {
+                "last_price": q.get("last_price"),
+                "net_change": q.get("net_change"),
+                "ohlc": q.get("ohlc") or {},
+                "volume": q.get("volume"),
+                "oi": q.get("oi"),
+                "upper_circuit_limit": q.get("upper_circuit_limit"),
+                "lower_circuit_limit": q.get("lower_circuit_limit"),
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+            },
+        }
+
     # ---- daily Kite login ----
 
     @app.get("/auth/login")
-    def auth_login(_: str = Depends(console_auth)):
+    def auth_login():
         return RedirectResponse(kite.login_url())
 
     # ---- Kite webhooks: postback (fills) + redirect (login & basket confirms) ----

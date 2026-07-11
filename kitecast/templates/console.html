@@ -14,21 +14,92 @@
 <div class="card">
   <h1>Ticket — Place &amp; Share</h1>
   <p class="dim" style="margin-top:-.5rem">Fires on <b>my</b> Kite. On my fill it writes the ledger, pre-builds every friend's exit link, and fans the entry mirror to their phones. Trades placed in the Kite app directly are never shared.</p>
-  <form class="ticket" method="post" action="/trade">
-    <div><label>Contract</label><input name="tradingsymbol" placeholder="CRUDEOIL25JULFUT" required></div>
-    <div><label>Exchange</label>
-      <select name="exchange"><option>MCX</option><option>NFO</option><option>NSE</option><option>BSE</option></select></div>
+  <form class="ticket" method="post" action="/trade" id="ticket">
+    <div style="grid-column:1/-1; position:relative">
+      <label>Contract — search live Kite instruments</label>
+      <input id="csearch" placeholder="crudeoil fut, gold aug, nifty 25000 ce…" autocomplete="off" spellcheck="false" required>
+      <input type="hidden" name="tradingsymbol" id="f_symbol">
+      <input type="hidden" name="exchange" id="f_exchange">
+      <div id="results" class="results" hidden></div>
+    </div>
     <div><label>Side</label>
       <select name="side"><option>BUY</option><option>SELL</option></select></div>
-    <div><label>Qty</label><input name="qty" type="number" min="1" required></div>
+    <div><label>Qty <span id="qtyhint" class="dim"></span></label><input name="qty" id="f_qty" type="number" min="1" required></div>
     <div><label>Product</label>
       <select name="product"><option>NRML</option><option>MIS</option><option>CNC</option></select></div>
     <div><label>Order type</label>
-      <select name="order_type"><option>MARKET</option><option>LIMIT</option></select></div>
-    <div><label>Limit price</label><input name="price" type="number" step="0.05" placeholder="—"></div>
+      <select name="order_type" id="f_ordertype"><option>MARKET</option><option>LIMIT</option></select></div>
+    <div><label>Limit price</label><input name="price" id="f_price" type="number" step="0.05" placeholder="—"></div>
     <div><button type="submit">Place &amp; Share</button></div>
   </form>
+  <div id="cinfo" class="cinfo" hidden></div>
 </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const search = $('csearch'), results = $('results'), cinfo = $('cinfo');
+let timer = null, selected = null;
+
+search.addEventListener('input', () => {
+  selected = null; $('f_symbol').value = ''; $('f_exchange').value = '';
+  cinfo.hidden = true;
+  clearTimeout(timer);
+  const q = search.value.trim();
+  if (q.length < 2) { results.hidden = true; return; }
+  timer = setTimeout(async () => {
+    const r = await fetch('/api/instruments?q=' + encodeURIComponent(q));
+    if (!r.ok) {
+      const err = (await r.json()).detail || 'search failed';
+      results.innerHTML = `<div class="ritem dim">${err}</div>`;
+      results.hidden = false; return;
+    }
+    const items = await r.json();
+    results.innerHTML = items.length ? items.map((x, i) =>
+      `<div class="ritem" data-i="${i}">
+         <b>${x.tradingsymbol}</b> <span class="dim">${x.exchange} · ${x.instrument_type}</span><br>
+         <span class="dim">${x.name}${x.expiry ? ' · exp ' + x.expiry : ''} · lot ${x.lot_size}</span>
+       </div>`).join('') : '<div class="ritem dim">no matches</div>';
+    results.hidden = false;
+    results.querySelectorAll('.ritem[data-i]').forEach(el =>
+      el.addEventListener('mousedown', () => select(items[el.dataset.i])));
+  }, 250);
+});
+
+async function select(x) {
+  selected = x;
+  search.value = `${x.exchange}:${x.tradingsymbol}`;
+  $('f_symbol').value = x.tradingsymbol;
+  $('f_exchange').value = x.exchange;
+  results.hidden = true;
+  // MCX quantity is in lots; equity/derivative segments take units in lot-size multiples.
+  const step = x.exchange === 'MCX' ? 1 : (x.lot_size || 1);
+  const qty = $('f_qty');
+  qty.min = step; qty.step = step; if (!qty.value) qty.value = step;
+  $('qtyhint').textContent = x.exchange === 'MCX' ? '(lots)' : (x.lot_size > 1 ? `(units, lot ${x.lot_size})` : '');
+  cinfo.innerHTML = '<span class="dim">loading contract…</span>'; cinfo.hidden = false;
+  const r = await fetch(`/api/contract?exchange=${x.exchange}&tradingsymbol=${encodeURIComponent(x.tradingsymbol)}`);
+  if (!r.ok) { cinfo.innerHTML = '<span class="dim">contract info unavailable</span>'; return; }
+  const c = await r.json(), q = c.quote, fmt = v => (v ?? v === 0) ? Number(v).toLocaleString('en-IN') : '—';
+  const chg = q.net_change ?? 0;
+  cinfo.innerHTML = `
+    <div class="cell"><label>Last price</label><b>${fmt(q.last_price)}</b>
+      <span class="${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '▲' : '▼'} ${fmt(Math.abs(chg))}</span></div>
+    <div class="cell"><label>O / H / L / C</label>${fmt(q.ohlc.open)} / ${fmt(q.ohlc.high)} / ${fmt(q.ohlc.low)} / ${fmt(q.ohlc.close)}</div>
+    <div class="cell"><label>Bid / Ask</label>${fmt(q.best_bid.price)} (${fmt(q.best_bid.quantity)}) / ${fmt(q.best_ask.price)} (${fmt(q.best_ask.quantity)})</div>
+    <div class="cell"><label>Volume / OI</label>${fmt(q.volume)} / ${fmt(q.oi)}</div>
+    <div class="cell"><label>Circuit limits</label>${fmt(q.lower_circuit_limit)} – ${fmt(q.upper_circuit_limit)}</div>
+    <div class="cell"><label>Lot / Tick</label>${fmt(c.lot_size)} / ${c.tick_size}</div>
+    <div class="cell"><label>Expiry</label>${c.expiry || '—'}</div>
+    <div class="cell"><label>Segment</label>${c.segment} · ${c.instrument_type}${c.strike ? ' · strike ' + fmt(c.strike) : ''}</div>`;
+  if ($('f_ordertype').value === 'LIMIT' && !$('f_price').value && q.last_price) $('f_price').value = q.last_price;
+  $('f_price').step = c.tick_size || 0.05;
+}
+
+document.addEventListener('click', e => { if (!results.contains(e.target) && e.target !== search) results.hidden = true; });
+$('ticket').addEventListener('submit', e => {
+  if (!$('f_symbol').value) { e.preventDefault(); search.focus(); results.hidden = false; }
+});
+</script>
 
 <div class="card">
   <h1>My fills &amp; positions</h1>

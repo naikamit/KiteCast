@@ -43,7 +43,7 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 
 | Route | Who | What |
 |---|---|---|
-| `/` | me | Ticket (contract · side · qty · product) → **Place & Share** / **Close & Share**, my fill status |
+| `/` | me | Ticket with live contract search (Kite instrument master + full quote: LTP, OHLC, bid/ask, OI, circuits, lot/tick/expiry) → **Place & Share** / **Close & Share**, my fill status |
 | `/board` | me | Per-friend board: entry/exit sent · confirmed (green/amber), one-tap nudge → call escalation |
 | `/friends` | me | The private circle (4 named friends), per-friend multipliers, on/off |
 | `/m/{token}` | friend | Auto-submitting pre-filled Kite basket — one tap to confirm |
@@ -63,7 +63,7 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 4. Configure and run:
 
 ```bash
-cp .env.example .env   # fill in keys, BASE_URL, Telegram token, console password
+cp .env.example .env   # fill in keys, BASE_URL, Telegram token
 pip install -r requirements.txt
 set -a; source .env; set +a
 python run.py          # or: uvicorn run:app --host 0.0.0.0 --port 8000
@@ -90,6 +90,12 @@ Share timing is configurable (`SHARE_TIMING_ENTRY/EXIT`): `fill` (default)
 fans mirrors when *my* order fills; `placement` fans the instant I place.
 
 ## Notes & honest limits
+
+- **The console has no login.** Anyone who knows the URL can place orders on
+  my account and see the friend ledger. Keep the hostname unguessable and
+  never post it anywhere; for extra cover, put an IP allowlist or an access
+  layer (e.g. Cloudflare Access) in front. `/kite/postback` stays safe
+  regardless (checksum-verified) and mirror links are per-share tokens.
 
 - Friends need MCX-enabled Zerodha accounts with margin, and a live Kite
   session (keep the app installed & logged in — the basket deep-links into it).

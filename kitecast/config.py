@@ -14,8 +14,6 @@ class Settings:
     kite_api_secret: str = field(default_factory=lambda: _env("KITE_API_SECRET"))
     base_url: str = field(default_factory=lambda: _env("BASE_URL", "http://localhost:8000").rstrip("/"))
     telegram_bot_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
-    console_user: str = field(default_factory=lambda: _env("CONSOLE_USER", "amit"))
-    console_password: str = field(default_factory=lambda: _env("CONSOLE_PASSWORD"))
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "kitecast.db"))
     # Open decision 10 — share timing: "fill" (default) or "placement".
     share_timing_entry: str = field(default_factory=lambda: _env("SHARE_TIMING_ENTRY", "fill"))

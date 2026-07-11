@@ -42,6 +42,29 @@ class KiteClient:
         self.access_token = data["access_token"]
         return self.access_token
 
+    def _auth_headers(self) -> dict:
+        if not self.access_token:
+            raise KiteError("No access token — complete the daily Kite login first (/auth/login).")
+        return {
+            "X-Kite-Version": "3",
+            "Authorization": f"token {self.api_key}:{self.access_token}",
+        }
+
+    # ---- market data ----
+
+    def instruments_csv(self) -> str:
+        """Kite's full instrument-master dump (CSV, refreshed daily)."""
+        resp = httpx.get(f"{API_ROOT}/instruments", headers=self._auth_headers(), timeout=30.0)
+        if resp.status_code != 200:
+            raise KiteError(f"Instrument dump failed (HTTP {resp.status_code})")
+        return resp.text
+
+    def quote(self, *keys: str) -> dict:
+        """Full quotes for EXCHANGE:TRADINGSYMBOL keys (price, OI, depth, circuits)."""
+        resp = httpx.get(f"{API_ROOT}/quote", params=[("i", k) for k in keys],
+                         headers=self._auth_headers(), timeout=10.0)
+        return self._unwrap(resp)
+
     # ---- orders ----
 
     def place_order(self, *, tradingsymbol: str, exchange: str, transaction_type: str,
@@ -49,8 +72,6 @@ class KiteClient:
                     price: float | None = None, autoslice: bool = False,
                     tag: str = "kitecast") -> str:
         """Place an order on MY account and return the Kite order_id."""
-        if not self.access_token:
-            raise KiteError("No access token — complete the daily Kite login first (/auth/login).")
         payload = {
             "tradingsymbol": tradingsymbol,
             "exchange": exchange,
@@ -65,14 +86,7 @@ class KiteClient:
             payload["price"] = str(price)
         if autoslice:
             payload["autoslice"] = "true"
-        resp = httpx.post(
-            f"{API_ROOT}/orders/regular",
-            data=payload,
-            headers={
-                "X-Kite-Version": "3",
-                "Authorization": f"token {self.api_key}:{self.access_token}",
-            },
-        )
+        resp = httpx.post(f"{API_ROOT}/orders/regular", data=payload, headers=self._auth_headers())
         return self._unwrap(resp)["order_id"]
 
     def verify_postback(self, payload: dict) -> bool:

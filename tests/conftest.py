@@ -6,8 +6,33 @@ from kitecast.kite import KiteClient
 from kitecast.service import TradeShareService
 
 
+SAMPLE_INSTRUMENTS_CSV = """\
+instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange
+1,1,CRUDEOIL25JULFUT,CRUDEOIL,0,2026-07-17,0,0.1,100,FUT,MCX-FUT,MCX
+2,2,CRUDEOIL25AUGFUT,CRUDEOIL,0,2026-08-19,0,0.1,100,FUT,MCX-FUT,MCX
+3,3,GOLD25AUGFUT,GOLD,0,2026-08-05,0,1,100,FUT,MCX-FUT,MCX
+4,4,NIFTY25JUL25000CE,NIFTY,0,2026-07-30,25000,0.05,75,CE,NFO-OPT,NFO
+5,5,RELIANCE,RELIANCE INDUSTRIES,0,,0,0.05,1,EQ,NSE,NSE
+6,6,GIFTNIFTY,GIFT NIFTY,0,2026-07-30,0,0.5,50,FUT,IFSC-FUT,NSEIX
+"""
+
+SAMPLE_QUOTE = {
+    "last_price": 6250.0,
+    "net_change": 42.5,
+    "volume": 12345,
+    "oi": 6789,
+    "ohlc": {"open": 6200.0, "high": 6280.0, "low": 6180.0, "close": 6207.5},
+    "upper_circuit_limit": 6800.0,
+    "lower_circuit_limit": 5700.0,
+    "depth": {
+        "buy": [{"price": 6249.9, "quantity": 3, "orders": 2}],
+        "sell": [{"price": 6250.1, "quantity": 5, "orders": 1}],
+    },
+}
+
+
 class FakeKite(KiteClient):
-    """Real checksum verification; order placement stubbed."""
+    """Real checksum verification; network calls stubbed."""
 
     def __init__(self):
         super().__init__("test_key", "test_secret", access_token="tok")
@@ -18,6 +43,14 @@ class FakeKite(KiteClient):
         self.orders.append(kwargs)
         self._next_id += 1
         return str(self._next_id)
+
+    def instruments_csv(self):
+        self._auth_headers()  # same login requirement as the real call
+        return SAMPLE_INSTRUMENTS_CSV
+
+    def quote(self, *keys):
+        self._auth_headers()
+        return {k: dict(SAMPLE_QUOTE) for k in keys}
 
 
 class FakeTelegram:
@@ -42,6 +75,13 @@ def settings(tmp_path):
     s.share_timing_entry = "fill"
     s.share_timing_exit = "fill"
     return s
+
+
+@pytest.fixture
+def store(kite):
+    from kitecast.instruments import InstrumentStore
+
+    return InstrumentStore(kite)
 
 
 @pytest.fixture
