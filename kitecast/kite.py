@@ -66,9 +66,12 @@ class KiteClient:
         return resp.text
 
     def quote(self, *keys: str) -> dict:
-        """Full quotes for EXCHANGE:TRADINGSYMBOL keys (price, OI, depth, circuits)."""
+        """Full quotes for EXCHANGE:TRADINGSYMBOL keys (price, OI, depth,
+        circuits). Routed via the whitelisted-IP proxy like orders — Zerodha
+        403s quote calls from non-whitelisted IPs."""
         resp = httpx.get(f"{API_ROOT}/quote", params=[("i", k) for k in keys],
-                         headers=self._auth_headers(), timeout=10.0)
+                         headers=self._auth_headers(), timeout=10.0,
+                         proxy=self.order_proxy)
         return self._unwrap(resp)
 
     # ---- orders ----
@@ -114,5 +117,6 @@ class KiteClient:
         except ValueError:
             raise KiteError(f"Kite returned non-JSON (HTTP {resp.status_code})")
         if resp.status_code != 200 or body.get("status") != "success":
-            raise KiteError(body.get("message", f"Kite error (HTTP {resp.status_code})"))
+            raise KiteError(f"{body.get('message', 'Kite error')} "
+                            f"(HTTP {resp.status_code}, {body.get('error_type', 'unknown')})")
         return body["data"]

@@ -213,6 +213,23 @@ def test_protected_limit_falls_back_to_fill_price_without_session(service, kite,
     assert order["price"] == 6300.0      # entry fill 6000 * 1.05
 
 
+def test_option_entry_without_anchor_price_fails_loudly(service, kite, friends):
+    """If the quote is unavailable (403, expired session), a MARKET option
+    entry must error clearly instead of firing a doomed bare MARKET order."""
+    from kitecast.kite import KiteError
+
+    kite.access_token = None  # quote() raises
+    try:
+        service.place_and_share(
+            tradingsymbol="CRUDEOIL26JUL5500CE", exchange="MCX", side="BUY",
+            qty=100, product="NRML", order_type="MARKET", price=None,
+        )
+        assert False, "expected KiteError"
+    except KiteError as e:
+        assert "market protection" in str(e)
+    assert kite.orders == []  # no bare MARKET went out
+
+
 def test_share_only_fans_without_placing_my_order(service, kite, telegram, friends, ledger):
     trade_id = service.share_only(
         tradingsymbol="CRUDEOIL25JULFUT", exchange="MCX", side="BUY",

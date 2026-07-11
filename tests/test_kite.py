@@ -50,3 +50,26 @@ def test_orders_go_through_static_ip_proxy(monkeypatch):
 
     # Empty env value means no proxy, not proxy-of-empty-string.
     assert KiteClient("key", "secret", order_proxy="").order_proxy is None
+
+
+def test_quotes_go_through_static_ip_proxy_too(monkeypatch):
+    """Zerodha 403s /quote from non-whitelisted IPs, so quotes share the proxy."""
+    calls = {}
+
+    def fake_get(url, **kwargs):
+        calls["url"], calls["proxy"] = url, kwargs.get("proxy")
+
+        class R:
+            status_code = 200
+
+            def json(self):
+                return {"status": "success", "data": {"MCX:X": {"last_price": 1.0}}}
+
+        return R()
+
+    monkeypatch.setattr("kitecast.kite.httpx.get", fake_get)
+    kite = KiteClient("key", "secret", access_token="tok",
+                      order_proxy="http://u:p@static-ip-proxy:8080")
+    assert kite.quote("MCX:X")["MCX:X"]["last_price"] == 1.0
+    assert calls["url"].endswith("/quote")
+    assert calls["proxy"] == "http://u:p@static-ip-proxy:8080"

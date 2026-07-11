@@ -10,7 +10,7 @@ import logging
 from . import basket
 from .config import Settings
 from .db import Ledger
-from .kite import KiteClient
+from .kite import KiteClient, KiteError
 from .telegram import TelegramClient
 
 log = logging.getLogger("kitecast")
@@ -27,18 +27,27 @@ class TradeShareService:
 
     def _market_protected(self, *, exchange: str, tradingsymbol: str, side: str,
                           order_type: str, price: float | None, pct: float,
-                          ref_fallback: float | None = None) -> tuple[str, float | None]:
+                          ref_fallback: float | None = None,
+                          strict: bool = False) -> tuple[str, float | None]:
         """MCX options reject bare MARKET orders (exchange rule). Emulate the
         Kite app's market protection: LIMIT at LTP ± pct, tick-rounded.
-        Everything else passes through unchanged."""
+        Everything else passes through unchanged. strict=True (my own orders)
+        raises when no anchor price exists — a bare MARKET would be rejected
+        by Kite anyway, with a less actionable message."""
         if order_type != "MARKET" or not basket.is_commodity_option(exchange, tradingsymbol):
             return order_type, price
         key = f"{exchange}:{tradingsymbol}"
         try:
             ref = self.kite.quote(key)[key]["last_price"] or ref_fallback
-        except Exception:
+        except Exception as e:
+            log.warning("quote failed for %s: %s", key, e)
             ref = ref_fallback  # e.g. expired session on a friend's late tap
         if not ref:
+            if strict:
+                raise KiteError(
+                    f"{tradingsymbol} needs market protection (MCX option) but no live "
+                    "price is available — check the logs for the quote error, or place "
+                    "a LIMIT order instead.")
             return order_type, price
         tick = 0.05
         if self.store is not None:
@@ -61,7 +70,7 @@ class TradeShareService:
         eff_type, eff_price = self._market_protected(
             exchange=exchange, tradingsymbol=tradingsymbol, side=side,
             order_type=order_type, price=price,
-            pct=self.settings.market_protection_pct_entry,
+            pct=self.settings.market_protection_pct_entry, strict=True,
         )
         order_id = self.kite.place_order(
             tradingsymbol=tradingsymbol, exchange=exchange, transaction_type=side,
@@ -120,7 +129,7 @@ class TradeShareService:
             exchange=trade["exchange"], tradingsymbol=trade["tradingsymbol"],
             side=close_side, order_type="MARKET", price=None,
             pct=self.settings.market_protection_pct_exit,
-            ref_fallback=trade["entry_fill_price"],
+            ref_fallback=trade["entry_fill_price"], strict=True,
         )
         order_id = self.kite.place_order(
             tradingsymbol=trade["tradingsymbol"], exchange=trade["exchange"],
