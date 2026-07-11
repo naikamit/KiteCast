@@ -109,6 +109,11 @@ def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
     assert trade["status"] == "SHARED"
     assert len(telegram.sent) == 3
 
+    # The console shows copyable public entry/close links for the trade.
+    page = client.get("/").text
+    assert f"https://vps.test/t/{trade['public_entry_token']}" in page
+    assert f"https://vps.test/t/{trade['public_exit_token']}" in page
+
     # Console offers "Share close" for it; the route pushes exit mirrors.
     assert "share-close" in client.get("/").text
     telegram.sent.clear()
@@ -119,8 +124,50 @@ def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
     assert kite.orders == []
 
 
+def test_public_link_works_with_no_friends_configured(client, ledger, kite, telegram):
+    """The core share-only ask: no order on my account, no Telegram needed —
+    just a URL I copy and send myself; any friend's tap places THEIR order."""
+    client.post("/trade", data={
+        "tradingsymbol": "CRUDEOIL25JULFUT", "exchange": "MCX", "side": "BUY",
+        "qty": "100", "product": "NRML", "order_type": "MARKET", "share_only": "on",
+    }, follow_redirects=False)
+    assert kite.orders == [] and telegram.sent == []
+    trade = ledger.trades()[0]
+
+    # Entry link renders the pre-filled basket at base qty.
+    r = client.get(f"/t/{trade['public_entry_token']}")
+    assert r.status_code == 200
+    assert "kite.zerodha.com/connect/basket" in r.text
+    assert "CRUDEOIL25JULFUT" in r.text and "BUY" in r.text
+
+    # Close link renders the opposite side.
+    r = client.get(f"/t/{trade['public_exit_token']}")
+    assert r.status_code == 200 and "SELL" in r.text
+
+    # A completed basket bumps the public confirm counter (repeatable —
+    # several friends can use the same link).
+    client.get(f"/kite/redirect?status=success&public_token={trade['public_entry_token']}")
+    client.get(f"/kite/redirect?status=success&public_token={trade['public_entry_token']}")
+    client.get(f"/kite/redirect?status=cancelled&public_token={trade['public_exit_token']}")
+    trade = ledger.trade(trade["id"])
+    assert trade["public_entry_confirms"] == 2
+    assert trade["public_exit_confirms"] == 0
+    assert "(2✓)" in client.get("/").text
+
+
+def test_placed_trades_also_get_public_links(client, ledger, kite, friends):
+    client.post("/trade", data={
+        "tradingsymbol": "GOLD25AUGFUT", "exchange": "MCX", "side": "SELL",
+        "qty": "10", "product": "NRML", "order_type": "MARKET",
+    }, follow_redirects=False)
+    trade = ledger.trades()[0]
+    assert trade["public_entry_token"] and trade["public_exit_token"]
+    assert client.get(f"/t/{trade['public_entry_token']}").status_code == 200
+
+
 def test_mirror_unknown_token_404(client):
     assert client.get("/m/nope").status_code == 404
+    assert client.get("/t/nope").status_code == 404
 
 
 def test_failed_basket_redirect_does_not_confirm(client, ledger, kite, telegram, friends):

@@ -37,7 +37,13 @@ CREATE TABLE IF NOT EXISTS trades (
     exit_order_id TEXT UNIQUE,
     exit_fill_price REAL,
     exit_fill_time TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    -- Anyone-with-the-link mirror URLs (no per-friend attribution): I copy
+    -- these and share them myself through any channel.
+    public_entry_token TEXT UNIQUE,
+    public_exit_token TEXT UNIQUE,
+    public_entry_confirms INTEGER NOT NULL DEFAULT 0,
+    public_exit_confirms INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS shares (
@@ -77,7 +83,25 @@ class Ledger:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a deployed DB was created."""
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(trades)")}
+        for col, ddl in (
+            ("public_entry_token", "TEXT"),
+            ("public_exit_token", "TEXT"),
+            ("public_entry_confirms", "INTEGER NOT NULL DEFAULT 0"),
+            ("public_exit_confirms", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if col not in cols:
+                self._conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {ddl}")
+        for row in self._conn.execute(
+                "SELECT id FROM trades WHERE public_entry_token IS NULL").fetchall():
+            self._conn.execute(
+                "UPDATE trades SET public_entry_token=?, public_exit_token=? WHERE id=?",
+                (secrets.token_urlsafe(16), secrets.token_urlsafe(16), row["id"]))
 
     def _exec(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -132,15 +156,29 @@ class Ledger:
         on my account, so no postback will ever match this row."""
         cur = self._exec(
             """INSERT INTO trades (tradingsymbol, exchange, side, qty, product, order_type,
-                                   price, status, entry_order_id, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                   price, status, entry_order_id, created_at,
+                                   public_entry_token, public_exit_token)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (tradingsymbol, exchange, side, qty, product, order_type, price, status,
-             entry_order_id, utcnow()),
+             entry_order_id, utcnow(), secrets.token_urlsafe(16), secrets.token_urlsafe(16)),
         )
         return cur.lastrowid
 
     def set_status(self, trade_id: int, status: str) -> None:
         self._exec("UPDATE trades SET status=? WHERE id=?", (status, trade_id))
+
+    def trade_by_public_token(self, token: str) -> tuple[sqlite3.Row, str] | None:
+        rows = self._query("SELECT * FROM trades WHERE public_entry_token=?", (token,))
+        if rows:
+            return rows[0], "ENTRY"
+        rows = self._query("SELECT * FROM trades WHERE public_exit_token=?", (token,))
+        if rows:
+            return rows[0], "EXIT"
+        return None
+
+    def record_public_confirm(self, trade_id: int, leg: str) -> None:
+        col = "public_entry_confirms" if leg == "ENTRY" else "public_exit_confirms"
+        self._exec(f"UPDATE trades SET {col}={col}+1 WHERE id=?", (trade_id,))
 
     def trade(self, trade_id: int) -> sqlite3.Row | None:
         rows = self._query("SELECT * FROM trades WHERE id=?", (trade_id,))

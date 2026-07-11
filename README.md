@@ -133,6 +133,12 @@ fans mirrors when *my* order fills; `placement` fans the instant I place.
   want to share but not take myself. The ledger row (status `SHARED`) has no
   order/fill of mine; "Share close" later pushes the matching close mirrors,
   again without touching my account.
+- **Public share links:** every trade row on the console has 🔗 entry / 🔗
+  close copy buttons (`/t/<token>` URLs). One link works for *any* friend —
+  no Telegram, no friend setup needed; I paste it wherever I like. Taps place
+  the order at base qty in the tapper's own Kite; confirms bump a counter on
+  the console (no per-friend attribution — use the per-friend links on
+  `/board` for that).
 
 ## Development
 

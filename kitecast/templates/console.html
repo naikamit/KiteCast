@@ -104,6 +104,13 @@ async function select(x) {
 document.addEventListener('click', e => { if (!results.contains(e.target) && e.target !== search) results.hidden = true; });
 $('f_shareonly').addEventListener('change', () =>
   $('submitbtn').textContent = $('f_shareonly').checked ? 'Share only' : 'Place & Share');
+document.querySelectorAll('.copy').forEach(btn => btn.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(btn.dataset.url); }
+  catch (e) { prompt('Copy the mirror link:', btn.dataset.url); return; }
+  const old = btn.textContent;
+  btn.textContent = '✓ copied';
+  setTimeout(() => { btn.textContent = old; }, 1500);
+}));
 $('ticket').addEventListener('submit', e => {
   if (!$('f_symbol').value) { e.preventDefault(); search.focus(); results.hidden = false; }
 });
@@ -112,7 +119,7 @@ $('ticket').addEventListener('submit', e => {
 <div class="card">
   <h1>My fills &amp; positions</h1>
   <table>
-    <tr><th>#</th><th>Contract</th><th>Side</th><th>Qty</th><th>Status</th><th>Entry fill</th><th>Exit fill</th><th></th></tr>
+    <tr><th>#</th><th>Contract</th><th>Side</th><th>Qty</th><th>Status</th><th>Entry fill</th><th>Exit fill</th><th>Share links</th><th></th></tr>
     {% for t in trades %}
     <tr>
       <td>{{ t['id'] }}</td>
@@ -129,6 +136,10 @@ $('ticket').addEventListener('submit', e => {
       </td>
       <td>{{ t['entry_fill_price'] or '—' }}</td>
       <td>{{ t['exit_fill_price'] or '—' }}</td>
+      <td style="white-space:nowrap">
+        <button class="ghost copy" type="button" data-url="{{ base_url }}/t/{{ t['public_entry_token'] }}">🔗 entry{% if t['public_entry_confirms'] %} ({{ t['public_entry_confirms'] }}✓){% endif %}</button>
+        <button class="ghost copy" type="button" data-url="{{ base_url }}/t/{{ t['public_exit_token'] }}">🔗 close{% if t['public_exit_confirms'] %} ({{ t['public_exit_confirms'] }}✓){% endif %}</button>
+      </td>
       <td>
         {% if t['status'] == 'FILLED' %}
         <form method="post" action="/trade/{{ t['id'] }}/close" style="display:inline"
@@ -144,7 +155,7 @@ $('ticket').addEventListener('submit', e => {
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="8" class="dim">No shared trades yet.</td></tr>
+    <tr><td colspan="9" class="dim">No shared trades yet.</td></tr>
     {% endfor %}
   </table>
 </div>

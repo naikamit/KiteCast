@@ -21,9 +21,9 @@
 <div class="card">
   {% if already_confirmed %}
   <div class="ok">✓ Already confirmed</div>
-  <p class="dim">This {{ 'entry' if share['leg'] == 'ENTRY' else 'close' }} was mirrored earlier. Nothing to do.</p>
+  <p class="dim">This {{ 'entry' if leg == 'ENTRY' else 'close' }} was mirrored earlier. Nothing to do.</p>
   {% else %}
-  <div class="dim">{{ 'Mirror entry' if share['leg'] == 'ENTRY' else 'CLOSE POSITION' }}</div>
+  <div class="dim">{{ 'Mirror entry' if leg == 'ENTRY' else 'CLOSE POSITION' }}</div>
   <div class="big">{{ order['transaction_type'] }} {{ order['quantity'] }} × {{ order['tradingsymbol'] }}</div>
   <div class="dim">{{ order['exchange'] }} · {{ order['product'] }} · {{ order['order_type'] }}</div>
   <form id="basket" method="post" action="{{ basket_url }}">

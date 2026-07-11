@@ -183,16 +183,23 @@ class TradeShareService:
         return True
 
     def build_mirror_order(self, share, trade) -> dict:
-        """Basket order for a friend's mirror page, built at tap time. MARKET
-        intent on a commodity option becomes a protected LIMIT anchored to
-        live LTP (fallback: my entry fill price)."""
-        order = (basket.entry_order(trade, share["qty"]) if share["leg"] == "ENTRY"
-                 else basket.exit_order(trade, share["qty"]))
+        """Basket order for a friend's per-friend mirror page (scaled qty)."""
+        return self._tap_time_order(trade, share["leg"], share["qty"])
+
+    def build_public_order(self, trade, leg: str) -> dict:
+        """Basket order for an anyone-with-the-link mirror page (base qty)."""
+        return self._tap_time_order(trade, leg, trade["qty"])
+
+    def _tap_time_order(self, trade, leg: str, qty: int) -> dict:
+        """Built at tap time: MARKET intent on a commodity option becomes a
+        protected LIMIT anchored to live LTP (fallback: my entry fill)."""
+        order = (basket.entry_order(trade, qty) if leg == "ENTRY"
+                 else basket.exit_order(trade, qty))
         eff_type, eff_price = self._market_protected(
             exchange=trade["exchange"], tradingsymbol=trade["tradingsymbol"],
             side=order["transaction_type"], order_type=order["order_type"],
             price=order.get("price"), ref_fallback=trade["entry_fill_price"],
-            pct=(self.settings.market_protection_pct_entry if share["leg"] == "ENTRY"
+            pct=(self.settings.market_protection_pct_entry if leg == "ENTRY"
                  else self.settings.market_protection_pct_exit),
         )
         if eff_type == "LIMIT" and order["order_type"] == "MARKET":

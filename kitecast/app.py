@@ -44,6 +44,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "trades": ledger.trades(),
             "logged_in": kite.access_token is not None,
             "flash": request.query_params.get("flash"),
+            "base_url": settings.base_url,
         })
 
     @app.post("/trade")
@@ -61,8 +62,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         try:
             if share_only == "on":
                 trade_id = service.share_only(**ticket)
-                return RedirectResponse(f"/?flash=Shared to friends, no order placed (trade #{trade_id})",
-                                        status_code=303)
+                return RedirectResponse(
+                    f"/?flash=No order placed — copy the 🔗 entry link below to share (trade #{trade_id})",
+                    status_code=303)
             trade_id = service.place_and_share(**ticket)
         except KiteError as e:
             return RedirectResponse(f"/?flash=Order failed: {e}", status_code=303)
@@ -182,6 +184,14 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             # A friend finished the Publisher basket flow in their own session.
             confirmed = params.get("status") == "success" and service.confirm_share(share_token)
             return templates.TemplateResponse(request, "done.html", {"confirmed": confirmed})
+        public_token = params.get("public_token")
+        if public_token:
+            # Someone confirmed via an anyone-with-the-link mirror.
+            found = ledger.trade_by_public_token(public_token)
+            confirmed = bool(found) and params.get("status") == "success"
+            if confirmed:
+                ledger.record_public_confirm(found[0]["id"], found[1])
+            return templates.TemplateResponse(request, "done.html", {"confirmed": confirmed})
         request_token = params.get("request_token")
         if request_token and params.get("status") == "success":
             # My daily Kite Connect login completing.
@@ -207,10 +217,28 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         trade = ledger.trade(share["trade_id"])
         order = service.build_mirror_order(share, trade)
         return templates.TemplateResponse(request, "mirror.html", {
-            "share": share, "trade": trade, "order": order,
+            "leg": share["leg"], "order": order,
             "basket_url": basket.BASKET_URL,
             "fields": basket.basket_form_fields(settings.kite_api_key, order, token),
             "already_confirmed": share["status"] == "CONFIRMED",
+        })
+
+    @app.get("/t/{token}", response_class=HTMLResponse)
+    def public_mirror(token: str, request: Request):
+        """Anyone-with-the-link mirror: I copy this URL from the console and
+        share it myself (group chat, WhatsApp, anywhere). Base qty, no
+        per-friend attribution — confirms bump a counter."""
+        found = ledger.trade_by_public_token(token)
+        if found is None:
+            raise HTTPException(404, "Unknown or expired mirror link")
+        trade, leg = found
+        order = service.build_public_order(trade, leg)
+        return templates.TemplateResponse(request, "mirror.html", {
+            "leg": leg, "order": order,
+            "basket_url": basket.BASKET_URL,
+            "fields": basket.basket_form_fields(settings.kite_api_key, order, token,
+                                                token_param="public_token"),
+            "already_confirmed": False,
         })
 
     return app

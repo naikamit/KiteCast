@@ -64,12 +64,15 @@ def _order(tradingsymbol: str, exchange: str, side: str, qty: int,
     return order
 
 
-def basket_form_fields(api_key: str, order: dict, share_token: str) -> dict:
-    """Fields for the auto-submitted POST to kite.zerodha.com/connect/basket."""
+def basket_form_fields(api_key: str, order: dict, token: str,
+                       token_param: str = "share_token") -> dict:
+    """Fields for the auto-submitted POST to kite.zerodha.com/connect/basket.
+    token_param is share_token for per-friend links, public_token for
+    anyone-with-the-link mirrors."""
     return {
         "api_key": api_key,
         "data": json.dumps([order]),
-        "redirect_params": urlencode({"share_token": share_token}),
+        "redirect_params": urlencode({token_param: token}),
     }
 
 
