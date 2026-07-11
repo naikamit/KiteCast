@@ -30,8 +30,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                               access_token=ledger.kv_get("access_token"),
                               order_proxy=settings.kite_order_proxy)
     telegram = telegram or TelegramClient(settings.telegram_bot_token)
-    service = TradeShareService(ledger, kite, telegram, settings)
     store = InstrumentStore(kite)
+    service = TradeShareService(ledger, kite, telegram, settings, store=store)
 
     app = FastAPI(title="KiteCast Trade Share")
     app.state.service = service
@@ -192,8 +192,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         if share is None:
             raise HTTPException(404, "Unknown or expired mirror link")
         trade = ledger.trade(share["trade_id"])
-        order = (basket.entry_order(trade, share["qty"]) if share["leg"] == "ENTRY"
-                 else basket.exit_order(trade, share["qty"]))
+        order = service.build_mirror_order(share, trade)
         return templates.TemplateResponse(request, "mirror.html", {
             "share": share, "trade": trade, "order": order,
             "basket_url": basket.BASKET_URL,

@@ -14,6 +14,7 @@ instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick
 4,4,NIFTY25JUL25000CE,NIFTY,0,2026-07-30,25000,0.05,75,CE,NFO-OPT,NFO
 5,5,RELIANCE,RELIANCE INDUSTRIES,0,,0,0.05,1,EQ,NSE,NSE
 6,6,GIFTNIFTY,GIFT NIFTY,0,2026-07-30,0,0.5,50,FUT,IFSC-FUT,NSEIX
+7,7,CRUDEOIL26JUL5500CE,CRUDEOIL,0,2026-07-15,5500,0.1,100,CE,MCX-OPT,MCX
 """
 
 SAMPLE_QUOTE = {
@@ -100,8 +101,8 @@ def telegram():
 
 
 @pytest.fixture
-def service(ledger, kite, telegram, settings):
-    return TradeShareService(ledger, kite, telegram, settings)
+def service(ledger, kite, telegram, settings, store):
+    return TradeShareService(ledger, kite, telegram, settings, store=store)
 
 
 @pytest.fixture

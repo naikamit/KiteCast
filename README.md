@@ -121,6 +121,11 @@ fans mirrors when *my* order fills; `placement` fans the instant I place.
   design).
 - Confirmation is based on the Publisher redirect `status=success`; a
   cancelled basket stays amber.
+- **Commodity options:** the exchange rejects bare MARKET orders on MCX
+  options, so a MARKET ticket on one is placed as a protected LIMIT at
+  LTP ± `MARKET_PROTECTION_PCT` (default 5%), tick-rounded — the same thing
+  the Kite app's market protection does. Friend mirrors re-anchor to live LTP
+  at tap time (fallback: my entry fill price if my session has expired).
 
 ## Development
 

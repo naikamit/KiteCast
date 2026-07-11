@@ -7,9 +7,24 @@ redirect can flip the board green.
 """
 
 import json
+import math
 from urllib.parse import urlencode
 
 BASKET_URL = "https://kite.zerodha.com/connect/basket"
+
+
+def is_commodity_option(exchange: str, tradingsymbol: str) -> bool:
+    """Zerodha blocks bare MARKET orders on MCX options (exchange rule)."""
+    return exchange == "MCX" and tradingsymbol.endswith(("CE", "PE"))
+
+
+def protected_limit(side: str, ref_price: float, pct: float, tick: float) -> float:
+    """Emulate the Kite app's market protection: an aggressive LIMIT at
+    LTP ± pct%, rounded to tick in the fill-guaranteeing direction."""
+    raw = ref_price * (1 + pct / 100) if side == "BUY" else ref_price * (1 - pct / 100)
+    ticks = round(raw / tick, 6)
+    n = math.ceil(ticks) if side == "BUY" else math.floor(ticks)
+    return round(n * tick, 2)
 
 
 def scaled_qty(qty: int, multiplier: float) -> int:

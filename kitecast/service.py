@@ -17,11 +17,39 @@ log = logging.getLogger("kitecast")
 
 
 class TradeShareService:
-    def __init__(self, ledger: Ledger, kite: KiteClient, telegram: TelegramClient, settings: Settings):
+    def __init__(self, ledger: Ledger, kite: KiteClient, telegram: TelegramClient,
+                 settings: Settings, store=None):
         self.ledger = ledger
         self.kite = kite
         self.telegram = telegram
         self.settings = settings
+        self.store = store  # InstrumentStore, for tick sizes
+
+    def _market_protected(self, *, exchange: str, tradingsymbol: str, side: str,
+                          order_type: str, price: float | None,
+                          ref_fallback: float | None = None) -> tuple[str, float | None]:
+        """MCX options reject bare MARKET orders (exchange rule). Emulate the
+        Kite app's market protection: LIMIT at LTP ± pct, tick-rounded.
+        Everything else passes through unchanged."""
+        if order_type != "MARKET" or not basket.is_commodity_option(exchange, tradingsymbol):
+            return order_type, price
+        key = f"{exchange}:{tradingsymbol}"
+        try:
+            ref = self.kite.quote(key)[key]["last_price"] or ref_fallback
+        except Exception:
+            ref = ref_fallback  # e.g. expired session on a friend's late tap
+        if not ref:
+            return order_type, price
+        tick = 0.05
+        if self.store is not None:
+            try:
+                inst = self.store.get(exchange, tradingsymbol)
+                tick = (inst and inst["tick_size"]) or tick
+            except Exception:
+                pass
+        limit = basket.protected_limit(side, ref, self.settings.market_protection_pct, tick)
+        log.info("market protection %s %s: MARKET -> LIMIT %.2f (ref %.2f)", side, tradingsymbol, limit, ref)
+        return "LIMIT", limit
 
     # ---- entry: Place & Share ----
 
@@ -30,10 +58,16 @@ class TradeShareService:
                         price: float | None) -> int:
         """Fire MY order, open the ledger row. Mirrors fan on my fill (default)
         or immediately, per SHARE_TIMING_ENTRY."""
+        eff_type, eff_price = self._market_protected(
+            exchange=exchange, tradingsymbol=tradingsymbol, side=side,
+            order_type=order_type, price=price,
+        )
         order_id = self.kite.place_order(
             tradingsymbol=tradingsymbol, exchange=exchange, transaction_type=side,
-            quantity=qty, product=product, order_type=order_type, price=price,
+            quantity=qty, product=product, order_type=eff_type, price=eff_price,
         )
+        # The ledger keeps the MARKET intent so friend mirrors re-anchor to
+        # live LTP at tap time instead of my (stale) protected limit.
         trade_id = self.ledger.create_trade(
             tradingsymbol=tradingsymbol, exchange=exchange, side=side, qty=qty,
             product=product, order_type=order_type, price=price, entry_order_id=order_id,
@@ -55,10 +89,15 @@ class TradeShareService:
             raise ValueError(f"Trade {trade_id} is not open (status={trade['status'] if trade else 'missing'})")
         close_side = "SELL" if trade["side"] == "BUY" else "BUY"
         close_qty = trade["entry_filled_qty"] or trade["qty"]
+        eff_type, eff_price = self._market_protected(
+            exchange=trade["exchange"], tradingsymbol=trade["tradingsymbol"],
+            side=close_side, order_type="MARKET", price=None,
+            ref_fallback=trade["entry_fill_price"],
+        )
         order_id = self.kite.place_order(
             tradingsymbol=trade["tradingsymbol"], exchange=trade["exchange"],
             transaction_type=close_side, quantity=close_qty,
-            product=trade["product"], order_type="MARKET",
+            product=trade["product"], order_type=eff_type, price=eff_price,
             autoslice=self.settings.kite_autoslice,
         )
         self.ledger.mark_closing(trade_id, order_id)
@@ -105,6 +144,22 @@ class TradeShareService:
         elif status in ("REJECTED", "CANCELLED") and leg == "ENTRY" and trade["status"] == "PLACED":
             self.ledger.mark_failed(trade["id"])
         return True
+
+    def build_mirror_order(self, share, trade) -> dict:
+        """Basket order for a friend's mirror page, built at tap time. MARKET
+        intent on a commodity option becomes a protected LIMIT anchored to
+        live LTP (fallback: my entry fill price)."""
+        order = (basket.entry_order(trade, share["qty"]) if share["leg"] == "ENTRY"
+                 else basket.exit_order(trade, share["qty"]))
+        eff_type, eff_price = self._market_protected(
+            exchange=trade["exchange"], tradingsymbol=trade["tradingsymbol"],
+            side=order["transaction_type"], order_type=order["order_type"],
+            price=order.get("price"), ref_fallback=trade["entry_fill_price"],
+        )
+        if eff_type == "LIMIT" and order["order_type"] == "MARKET":
+            order["order_type"] = "LIMIT"
+            order["price"] = eff_price
+        return order
 
     # ---- friend confirmations ----
 

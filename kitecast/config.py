@@ -23,6 +23,9 @@ class Settings:
     # order endpoints). e.g. http://user:pass@proxy-host:port — leave empty
     # when the host itself has the whitelisted static IP.
     kite_order_proxy: str = field(default_factory=lambda: _env("KITE_ORDER_PROXY"))
+    # MCX options reject bare MARKET orders; we emulate the Kite app's market
+    # protection with a LIMIT at LTP ± this percent (wide = at-any-cost).
+    market_protection_pct: float = field(default_factory=lambda: float(_env("MARKET_PROTECTION_PCT", "5")))
 
     @property
     def postback_url(self) -> str:

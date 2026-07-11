@@ -58,3 +58,18 @@ def test_basket_form_fields_carry_share_token():
 
 def test_mirror_url():
     assert basket.mirror_url("https://vps.test", "abc") == "https://vps.test/m/abc"
+
+
+def test_is_commodity_option():
+    assert basket.is_commodity_option("MCX", "SILVERM26AUG100000CE") is True
+    assert basket.is_commodity_option("MCX", "CRUDEOIL26JUL5500PE") is True
+    assert basket.is_commodity_option("MCX", "CRUDEOIL25JULFUT") is False
+    assert basket.is_commodity_option("NFO", "NIFTY25JUL25000CE") is False
+
+
+def test_protected_limit_rounds_toward_fill():
+    assert basket.protected_limit("BUY", 100.0, 5, 0.05) == 105.0
+    assert basket.protected_limit("SELL", 100.0, 5, 0.1) == 95.0
+    # Off-tick raws round in the direction that guarantees the fill:
+    assert basket.protected_limit("BUY", 99.99, 5, 0.05) == 105.0   # ceil of 104.9895
+    assert basket.protected_limit("SELL", 99.99, 5, 0.05) == 94.95  # floor of 94.9905

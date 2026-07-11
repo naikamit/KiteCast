@@ -157,6 +157,62 @@ def test_manual_share_friend_gets_link_not_push(service, kite, telegram, ledger)
     assert telegram.sent[0][0] == "1001"
 
 
+def test_commodity_option_market_order_becomes_protected_limit(service, kite, telegram, friends, ledger):
+    """MCX options reject bare MARKET; my order goes out as LIMIT at LTP+5%."""
+    trade_id = service.place_and_share(
+        tradingsymbol="CRUDEOIL26JUL5500CE", exchange="MCX", side="BUY",
+        qty=100, product="NRML", order_type="MARKET", price=None,
+    )
+    placed = kite.orders[0]
+    assert placed["order_type"] == "LIMIT"
+    assert placed["price"] == 6562.5     # LTP 6250 * 1.05, tick 0.1
+    # Ledger keeps the MARKET intent for tap-time re-anchoring.
+    assert ledger.trade(trade_id)["order_type"] == "MARKET"
+
+    # Close goes out as a protected LIMIT on the opposite side.
+    trade = ledger.trade(trade_id)
+    service.handle_postback(postback(kite, trade["entry_order_id"], filled_qty=100))
+    service.close_and_share(trade_id)
+    close = kite.orders[-1]
+    assert close["transaction_type"] == "SELL"
+    assert close["order_type"] == "LIMIT"
+    assert close["price"] == 5937.5      # LTP 6250 * 0.95
+
+    # Friend mirrors are protected LIMITs too, anchored at tap time.
+    share = ledger.shares_for_trade(trade_id, "ENTRY")[0]
+    order = service.build_mirror_order(share, ledger.trade(trade_id))
+    assert order["order_type"] == "LIMIT" and order["price"] == 6562.5
+    exit_share = ledger.shares_for_trade(trade_id, "EXIT")[0]
+    order = service.build_mirror_order(exit_share, ledger.trade(trade_id))
+    assert order["transaction_type"] == "SELL"
+    assert order["order_type"] == "LIMIT" and order["price"] == 5937.5
+
+
+def test_futures_market_orders_stay_market(service, kite, friends):
+    service.place_and_share(
+        tradingsymbol="CRUDEOIL25JULFUT", exchange="MCX", side="BUY",
+        qty=100, product="NRML", order_type="MARKET", price=None,
+    )
+    assert kite.orders[0]["order_type"] == "MARKET"
+    assert kite.orders[0].get("price") is None
+
+
+def test_protected_limit_falls_back_to_fill_price_without_session(service, kite, telegram, friends, ledger):
+    """A friend tapping after my token expired still gets a valid LIMIT,
+    anchored to my recorded entry fill."""
+    trade_id = service.place_and_share(
+        tradingsymbol="CRUDEOIL26JUL5500CE", exchange="MCX", side="BUY",
+        qty=100, product="NRML", order_type="MARKET", price=None,
+    )
+    trade = ledger.trade(trade_id)
+    service.handle_postback(postback(kite, trade["entry_order_id"], filled_qty=100, avg_price=6000.0))
+    kite.access_token = None  # session expired -> quote() raises
+    share = ledger.shares_for_trade(trade_id, "ENTRY")[0]
+    order = service.build_mirror_order(share, ledger.trade(trade_id))
+    assert order["order_type"] == "LIMIT"
+    assert order["price"] == 6300.0      # entry fill 6000 * 1.05
+
+
 def test_duplicate_fill_postback_does_not_refan(service, kite, telegram, friends, ledger):
     trade_id = place_and_fill(service, kite)
     trade = ledger.trade(trade_id)

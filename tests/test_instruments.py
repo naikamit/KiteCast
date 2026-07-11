@@ -5,9 +5,14 @@ from kitecast.kite import KiteError
 
 def test_search_prefix_ranks_first_and_nearest_expiry(store):
     hits = store.search("crudeoil")
-    assert [h["tradingsymbol"] for h in hits] == ["CRUDEOIL25JULFUT", "CRUDEOIL25AUGFUT"]
-    assert hits[0]["lot_size"] == 100
-    assert hits[0]["expiry"] == "2026-07-17"
+    assert [h["tradingsymbol"] for h in hits] == [
+        "CRUDEOIL26JUL5500CE", "CRUDEOIL25JULFUT", "CRUDEOIL25AUGFUT",
+    ]
+    assert [h["tradingsymbol"] for h in store.search("crudeoil fut")] == [
+        "CRUDEOIL25JULFUT", "CRUDEOIL25AUGFUT",
+    ]
+    assert hits[1]["lot_size"] == 100
+    assert hits[1]["expiry"] == "2026-07-17"
 
 
 def test_search_multi_word_and_name(store):

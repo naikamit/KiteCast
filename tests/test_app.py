@@ -26,7 +26,7 @@ def test_console_pages_open(client):
 
 
 def test_instrument_search_api(client):
-    hits = client.get("/api/instruments?q=crudeoil").json()
+    hits = client.get("/api/instruments?q=crudeoil fut").json()
     assert hits[0]["tradingsymbol"] == "CRUDEOIL25JULFUT"
     assert hits[0]["exchange"] == "MCX"
 
