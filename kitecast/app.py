@@ -27,7 +27,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
               telegram: TelegramClient | None = None) -> FastAPI:
     ledger = ledger or Ledger(settings.db_path)
     kite = kite or KiteClient(settings.kite_api_key, settings.kite_api_secret,
-                              access_token=ledger.kv_get("access_token"))
+                              access_token=ledger.kv_get("access_token"),
+                              order_proxy=settings.kite_order_proxy)
     telegram = telegram or TelegramClient(settings.telegram_bot_token)
     service = TradeShareService(ledger, kite, telegram, settings)
     store = InstrumentStore(kite)

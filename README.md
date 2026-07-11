@@ -57,9 +57,18 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
    `https://YOUR_HOST/kite/postback`.
 2. **Telegram bot**: create via @BotFather; each friend sends `/start` to the
    bot once, then store their chat id on `/friends`.
-3. **VPS** (NFR-2): always-on, **static IP** (register it with the api_key if
-   required), **exclude Mullvad** / any VPN from this host's egress so
-   postbacks and Publisher redirects always land.
+3. **VPS** (NFR-2): always-on, **static IP**, **exclude Mullvad** / any VPN
+   from this host's egress so postbacks and Publisher redirects always land.
+4. **Static IP whitelist (mandatory for orders):** Zerodha validates *order*
+   endpoints against **one** whitelisted IP, set at developers.kite.trade →
+   Profile → IP Whitelist and changeable only **once per calendar week**.
+   Market data, session, and postbacks are not IP-validated.
+   - Host with its own static IP (a VPS): whitelist that IP, leave
+     `KITE_ORDER_PROXY` empty.
+   - Host without one fixed egress IP (Render, Railway, Heroku…): set
+     `KITE_ORDER_PROXY=http://user:pass@host:port` to a proxy with a single
+     static IP and whitelist the *proxy's* IP. Only the order-placement call
+     goes through it; everything else stays direct.
 4. Configure and run:
 
 ```bash

@@ -18,10 +18,16 @@ class KiteError(Exception):
 
 
 class KiteClient:
-    def __init__(self, api_key: str, api_secret: str, access_token: str | None = None):
+    def __init__(self, api_key: str, api_secret: str, access_token: str | None = None,
+                 order_proxy: str | None = None):
         self.api_key = api_key
         self.api_secret = api_secret
         self.access_token = access_token
+        # Zerodha validates ORDER endpoints against a single whitelisted static
+        # IP. On hosts without one fixed egress IP (e.g. Render), route just
+        # the order calls through a static-IP proxy; market data and session
+        # calls are not IP-validated and go direct.
+        self.order_proxy = order_proxy or None
 
     # ---- daily login flow ----
 
@@ -86,7 +92,8 @@ class KiteClient:
             payload["price"] = str(price)
         if autoslice:
             payload["autoslice"] = "true"
-        resp = httpx.post(f"{API_ROOT}/orders/regular", data=payload, headers=self._auth_headers())
+        resp = httpx.post(f"{API_ROOT}/orders/regular", data=payload,
+                          headers=self._auth_headers(), proxy=self.order_proxy)
         return self._unwrap(resp)["order_id"]
 
     def verify_postback(self, payload: dict) -> bool:

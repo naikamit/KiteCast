@@ -19,6 +19,10 @@ class Settings:
     share_timing_entry: str = field(default_factory=lambda: _env("SHARE_TIMING_ENTRY", "fill"))
     share_timing_exit: str = field(default_factory=lambda: _env("SHARE_TIMING_EXIT", "fill"))
     kite_autoslice: bool = field(default_factory=lambda: _env("KITE_AUTOSLICE", "true").lower() == "true")
+    # Static-IP proxy for order placement only (Zerodha whitelists one IP for
+    # order endpoints). e.g. http://user:pass@proxy-host:port — leave empty
+    # when the host itself has the whitelisted static IP.
+    kite_order_proxy: str = field(default_factory=lambda: _env("KITE_ORDER_PROXY"))
 
     @property
     def postback_url(self) -> str:
