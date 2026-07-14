@@ -53,6 +53,11 @@ class FakeKite(KiteClient):
         self._auth_headers()
         return {k: dict(SAMPLE_QUOTE) for k in keys}
 
+    def order_margins(self, order):
+        self._auth_headers()
+        return {"total": 150000.0, "span": 90000.0, "exposure": 60000.0,
+                "option_premium": 0, "type": "commodity"}
+
 
 class FakeTelegram:
     def __init__(self):

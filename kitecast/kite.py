@@ -74,6 +74,15 @@ class KiteClient:
                          proxy=self.order_proxy)
         return self._unwrap(resp)
 
+    def order_margins(self, order: dict) -> dict:
+        """Required margin/premium for one prospective order (Kite margins
+        API). Order-adjacent, so it rides the whitelisted-IP proxy too."""
+        resp = httpx.post(f"{API_ROOT}/margins/orders", json=[order],
+                          headers=self._auth_headers(), timeout=10.0,
+                          proxy=self.order_proxy)
+        data = self._unwrap(resp)
+        return data[0] if isinstance(data, list) and data else {}
+
     # ---- orders ----
 
     def place_order(self, *, tradingsymbol: str, exchange: str, transaction_type: str,

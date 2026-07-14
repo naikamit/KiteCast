@@ -108,7 +108,7 @@ def test_full_flow_over_http(client, ledger, kite, telegram, friends):
 def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
     r = client.post("/trade", data={
         "tradingsymbol": "CRUDEOIL25JULFUT", "exchange": "MCX", "side": "BUY",
-        "qty": "100", "product": "NRML", "order_type": "MARKET", "share_only": "on",
+        "qty": "100", "product": "NRML", "order_type": "MARKET", "mode": "share_url",
     }, follow_redirects=False)
     assert r.status_code == 303
     assert kite.orders == []
@@ -116,8 +116,10 @@ def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
     assert trade["status"] == "SHARED"
     assert len(telegram.sent) == 3
 
-    # The console shows copyable public entry/close links for the trade.
-    page = client.get("/").text
+    # The redirect lands on a links-ready panel with both public URLs.
+    assert r.headers["location"] == f"/?shared={trade['id']}"
+    page = client.get(r.headers["location"]).text
+    assert "no order was placed" in page
     assert f"https://vps.test/t/{trade['public_entry_token']}" in page
     assert f"https://vps.test/t/{trade['public_exit_token']}" in page
 
@@ -136,7 +138,7 @@ def test_public_link_works_with_no_friends_configured(client, ledger, kite, tele
     just a URL I copy and send myself; any friend's tap places THEIR order."""
     client.post("/trade", data={
         "tradingsymbol": "CRUDEOIL25JULFUT", "exchange": "MCX", "side": "BUY",
-        "qty": "100", "product": "NRML", "order_type": "MARKET", "share_only": "on",
+        "qty": "100", "product": "NRML", "order_type": "MARKET", "mode": "share_url",
     }, follow_redirects=False)
     assert kite.orders == [] and telegram.sent == []
     trade = ledger.trades()[0]
@@ -160,6 +162,27 @@ def test_public_link_works_with_no_friends_configured(client, ledger, kite, tele
     assert trade["public_entry_confirms"] == 2
     assert trade["public_exit_confirms"] == 0
     assert "(2✓)" in client.get("/").text
+
+
+def test_order_cost_api(client):
+    r = client.get("/api/cost?exchange=MCX&tradingsymbol=CRUDEOIL25JULFUT&side=BUY&qty=3")
+    assert r.status_code == 200
+    c = r.json()
+    assert c["lots"] == 3                    # MCX qty is lots
+    assert c["units"] == 300                 # 3 lots × lot_size 100
+    assert c["ref_price"] == 6250.0          # MARKET anchors to LTP
+    assert c["order_value"] == 1875000.0     # 6250 × 300
+    assert c["total"] == 150000.0            # Kite margins API total
+    assert c["per_lot"] == 50000.0           # total / lots
+    assert c["span"] == 90000.0 and c["exposure"] == 60000.0
+
+    # LIMIT price overrides the anchor.
+    c = client.get("/api/cost?exchange=MCX&tradingsymbol=CRUDEOIL25JULFUT"
+                   "&side=BUY&qty=1&order_type=LIMIT&price=6000").json()
+    assert c["ref_price"] == 6000.0
+    assert c["order_value"] == 600000.0
+
+    assert client.get("/api/cost?exchange=MCX&tradingsymbol=NOPE&side=BUY&qty=1").status_code == 404
 
 
 def test_placed_trades_also_get_public_links(client, ledger, kite, friends):

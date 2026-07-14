@@ -4,6 +4,25 @@
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
+{% if shared_trade %}
+<div class="card" style="border-color:var(--blue)">
+  <h1>Links ready — no order was placed on my account (trade #{{ shared_trade['id'] }})</h1>
+  <p class="dim" style="margin-top:-.5rem">{{ shared_trade['side'] }} {{ shared_trade['qty'] }} × {{ shared_trade['exchange'] }}:{{ shared_trade['tradingsymbol'] }} — send the entry link now; keep the close link for the exit. One link works for all friends.</p>
+  <div style="display:grid; gap:.5rem">
+    <div style="display:flex; gap:.5rem; align-items:center">
+      <span style="min-width:4rem">Entry</span>
+      <input readonly value="{{ base_url }}/t/{{ shared_trade['public_entry_token'] }}" onclick="this.select()">
+      <button class="copy" type="button" data-url="{{ base_url }}/t/{{ shared_trade['public_entry_token'] }}">Copy</button>
+    </div>
+    <div style="display:flex; gap:.5rem; align-items:center">
+      <span style="min-width:4rem">Close</span>
+      <input readonly value="{{ base_url }}/t/{{ shared_trade['public_exit_token'] }}" onclick="this.select()">
+      <button class="copy" type="button" data-url="{{ base_url }}/t/{{ shared_trade['public_exit_token'] }}">Copy</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if not logged_in %}
 <div class="card">
   <b>Kite session needed.</b> <span class="dim">Complete the daily Kite Connect login before placing shared trades.</span>
@@ -30,15 +49,14 @@
     <div><label>Order type</label>
       <select name="order_type" id="f_ordertype"><option>MARKET</option><option>LIMIT</option></select></div>
     <div><label>Limit price</label><input name="price" id="f_price" type="number" step="0.05" placeholder="—"></div>
-    <div><button type="submit" id="submitbtn">Place &amp; Share</button></div>
-    <div style="grid-column:1/-1">
-      <label style="display:inline-flex; align-items:center; gap:.4rem; font-size:.85rem; cursor:pointer">
-        <input type="checkbox" name="share_only" id="f_shareonly" style="width:auto">
-        Share only — send mirror links to friends without placing my order
-      </label>
+    <div style="grid-column:1/-1; display:flex; gap:.6rem; flex-wrap:wrap">
+      <button type="submit" name="mode" value="place">Place &amp; Share</button>
+      <button type="submit" name="mode" value="share_url" style="background:transparent; border:1px solid var(--blue); color:var(--blue)"
+              title="Creates the mirror links without placing any order on my account">🔗 Share URL only — don't place my order</button>
     </div>
   </form>
   <div id="cinfo" class="cinfo" hidden></div>
+  <div id="costinfo" class="cinfo" hidden></div>
 </div>
 
 <script>
@@ -99,11 +117,51 @@ async function select(x) {
     <div class="cell"><label>Segment</label>${c.segment} · ${c.instrument_type}${c.strike ? ' · strike ' + fmt(c.strike) : ''}</div>`;
   if ($('f_ordertype').value === 'LIMIT' && !$('f_price').value && q.last_price) $('f_price').value = q.last_price;
   $('f_price').step = c.tick_size || 0.05;
+  fetchCost();
 }
 
+const inr = v => (v ?? v === 0) ? '₹' + Number(v).toLocaleString('en-IN', {maximumFractionDigits: 2}) : '—';
+let costTimer = null;
+
+function fetchCost() {
+  clearTimeout(costTimer);
+  costTimer = setTimeout(async () => {
+    const costEl = $('costinfo');
+    if (!selected || !$('f_qty').value) { costEl.hidden = true; return; }
+    const form = document.getElementById('ticket');
+    const params = new URLSearchParams({
+      exchange: selected.exchange, tradingsymbol: selected.tradingsymbol,
+      side: form.side.value, qty: $('f_qty').value,
+      product: form.product.value, order_type: $('f_ordertype').value,
+    });
+    if ($('f_ordertype').value === 'LIMIT' && $('f_price').value) params.set('price', $('f_price').value);
+    costEl.innerHTML = '<span class="dim">calculating cost…</span>'; costEl.hidden = false;
+    const r = await fetch('/api/cost?' + params);
+    if (!r.ok) { costEl.innerHTML = '<span class="dim">cost unavailable</span>'; return; }
+    const c = await r.json();
+    const lotWord = c.lots === 1 ? 'lot' : 'lots';
+    let rows = `
+      <div class="cell"><label>Position</label><b>${form.side.value} ${c.lots} ${lotWord}</b> = ${Number(c.units).toLocaleString('en-IN')} units (lot ${c.lot_size})</div>
+      <div class="cell"><label>Anchor price</label>${inr(c.ref_price)}${c.ref_price !== c.ltp ? ` <span class="dim">(LTP ${inr(c.ltp)})</span>` : ' <span class="dim">(LTP)</span>'}</div>
+      <div class="cell"><label>Order value</label><b>${inr(c.order_value)}</b> <span class="dim">(price × units)</span></div>`;
+    if (c.total) {
+      rows += `
+      <div class="cell"><label>Required now (margin/premium)</label>
+        <b>${inr(c.per_lot)}</b>/lot × ${c.lots} ${lotWord} = <b>${inr(c.total)}</b></div>`;
+      if (c.span || c.exposure) rows += `
+      <div class="cell"><label>Margin breakdown</label>SPAN ${inr(c.span)} · exposure ${inr(c.exposure)}${c.option_premium ? ' · premium ' + inr(c.option_premium) : ''}</div>`;
+    } else {
+      rows += `<div class="cell"><label>Required now</label><span class="dim">${c.margin_error || 'unavailable'}</span></div>`;
+    }
+    costEl.innerHTML = rows;
+  }, 300);
+}
+
+['f_qty', 'f_price', 'f_ordertype'].forEach(id => $(id).addEventListener('input', fetchCost));
+document.getElementById('ticket').side.addEventListener('change', fetchCost);
+document.getElementById('ticket').product.addEventListener('change', fetchCost);
+
 document.addEventListener('click', e => { if (!results.contains(e.target) && e.target !== search) results.hidden = true; });
-$('f_shareonly').addEventListener('change', () =>
-  $('submitbtn').textContent = $('f_shareonly').checked ? 'Share only' : 'Place & Share');
 document.addEventListener('click', async e => {
   const btn = e.target.closest('.copy');
   if (!btn) return;

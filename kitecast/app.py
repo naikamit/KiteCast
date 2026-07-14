@@ -40,18 +40,23 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
 
     @app.get("/", response_class=HTMLResponse)
     def console(request: Request):
+        shared_trade = None
+        shared_id = request.query_params.get("shared")
+        if shared_id and shared_id.isdigit():
+            shared_trade = ledger.trade(int(shared_id))
         return templates.TemplateResponse(request, "console.html", {
             "trades": ledger.trades(),
             "logged_in": kite.access_token is not None,
             "flash": request.query_params.get("flash"),
             "base_url": settings.base_url,
+            "shared_trade": shared_trade,
         })
 
     @app.post("/trade")
     def place_trade(tradingsymbol: str = Form(...), exchange: str = Form("MCX"),
                     side: str = Form(...), qty: int = Form(...),
                     product: str = Form("NRML"), order_type: str = Form("MARKET"),
-                    price: float | None = Form(None), share_only: str = Form("off")):
+                    price: float | None = Form(None), mode: str = Form("place")):
         if side not in ("BUY", "SELL") or qty <= 0:
             raise HTTPException(400, "Invalid ticket")
         ticket = dict(
@@ -60,11 +65,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             price=price if order_type == "LIMIT" else None,
         )
         try:
-            if share_only == "on":
+            if mode == "share_url":
                 trade_id = service.share_only(**ticket)
-                return RedirectResponse(
-                    f"/?flash=No order placed — copy the 🔗 entry link below to share (trade #{trade_id})",
-                    status_code=303)
+                return RedirectResponse(f"/?shared={trade_id}", status_code=303)
             trade_id = service.place_and_share(**ticket)
         except KiteError as e:
             return RedirectResponse(f"/?flash=Order failed: {e}", status_code=303)
@@ -160,6 +163,50 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                 "best_bid": best_bid,
                 "best_ask": best_ask,
             },
+        }
+
+    @app.get("/api/cost")
+    def order_cost(exchange: str, tradingsymbol: str, side: str, qty: int,
+                   product: str = "NRML", order_type: str = "MARKET",
+                   price: float | None = None):
+        """Everything the ticket needs to show what this order costs:
+        anchor price, order value, and Kite's real margin/premium number,
+        per lot and multiplied out."""
+        tradingsymbol = tradingsymbol.upper()
+        try:
+            inst = store.get(exchange, tradingsymbol)
+            key = f"{exchange}:{tradingsymbol}"
+            quote = kite.quote(key).get(key, {})
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+        if inst is None:
+            raise HTTPException(404, "Unknown contract")
+        ltp = quote.get("last_price") or 0
+        ref_price = price if (order_type == "LIMIT" and price) else ltp
+        lot_size = inst["lot_size"] or 1
+        # MCX quantity is lots; other segments take units in lot multiples.
+        units = qty * lot_size if exchange == "MCX" else qty
+        lots = qty if exchange == "MCX" else (qty // lot_size if lot_size > 1 else qty)
+        margin = {}
+        try:
+            margin = kite.order_margins({
+                "exchange": exchange, "tradingsymbol": tradingsymbol,
+                "transaction_type": side, "variety": "regular",
+                "product": product, "order_type": order_type,
+                "quantity": qty, "price": ref_price or 0,
+            })
+        except KiteError as e:
+            margin = {"error": str(e)}
+        total = margin.get("total")
+        return {
+            "ltp": ltp, "ref_price": ref_price, "lot_size": lot_size,
+            "units": units, "lots": lots,
+            "order_value": round(ref_price * units, 2) if ref_price else None,
+            "total": total,
+            "per_lot": round(total / lots, 2) if total and lots else None,
+            "span": margin.get("span"), "exposure": margin.get("exposure"),
+            "option_premium": margin.get("option_premium"),
+            "margin_error": margin.get("error"),
         }
 
     # ---- daily Kite login ----
