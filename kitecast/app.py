@@ -239,8 +239,10 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             raise HTTPException(409, str(e))
         if inst is None:
             raise HTTPException(404, "Unknown contract")
+        from .kite import best_price as _best
+
         ltp = quote.get("last_price") or 0
-        ref_price = price if (order_type == "LIMIT" and price) else ltp
+        ref_price = price if (order_type == "LIMIT" and price) else (_best(quote, side) or 0)
         lot_size = inst["lot_size"] or 1
         # MCX quantity is lots; other segments take units in lot multiples.
         units = qty * lot_size if exchange == "MCX" else qty

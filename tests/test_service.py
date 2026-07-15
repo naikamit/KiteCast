@@ -215,6 +215,28 @@ def test_protected_limit_falls_back_to_fill_price_without_session(service, kite,
     assert order["price"] == 6300.0      # entry fill 6000 * 1.05
 
 
+def test_illiquid_option_anchors_to_order_book(service, kite, telegram, friends, ledger):
+    """No trades yet (LTP 0): a MARKET option BUY anchors its protected LIMIT
+    to the best ask instead of failing or using a bogus zero."""
+    kite.quote_data = dict(kite.quote_data)
+    kite.quote_data["last_price"] = 0
+    trade_id = service.place_and_share(
+        tradingsymbol="CRUDEOIL26JUL5500CE", exchange="MCX", side="BUY",
+        qty=100, product="NRML", order_type="MARKET", price=None,
+    )
+    placed = kite.orders[0]
+    assert placed["order_type"] == "LIMIT"
+    assert placed["price"] == 6562.7      # ask 6250.1 * 1.05, tick 0.1, ceil
+
+    # Mirror page price context labels the fallback.
+    trade = ledger.trade(trade_id)
+    service.handle_postback(postback(kite, trade["entry_order_id"], filled_qty=100))
+    share = ledger.shares_for_trade(trade_id, "ENTRY")[0]
+    ctx = service.price_context(ledger.trade(trade_id), service.build_mirror_order(share, ledger.trade(trade_id)))
+    assert ctx["ltp"] == 6250.1
+    assert ctx["price_note"] == "best available, from order book"
+
+
 def test_option_entry_without_anchor_price_fails_loudly(service, kite, friends):
     """If the quote is unavailable (403, expired session), a MARKET option
     entry must error clearly instead of firing a doomed bare MARKET order."""

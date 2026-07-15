@@ -17,6 +17,19 @@ class KiteError(Exception):
     pass
 
 
+def best_price(quote: dict, side: str) -> float | None:
+    """Best actionable price from a quote. Illiquid contracts often have no
+    last trade — fall back to the touch (ask for BUY, bid for SELL), then
+    previous close."""
+    if quote.get("last_price"):
+        return quote["last_price"]
+    depth = quote.get("depth") or {}
+    book = depth.get("sell") if side == "BUY" else depth.get("buy")
+    if book and book[0].get("price"):
+        return book[0]["price"]
+    return (quote.get("ohlc") or {}).get("close") or None
+
+
 class KiteClient:
     def __init__(self, api_key: str, api_secret: str, access_token: str | None = None,
                  order_proxy: str | None = None):

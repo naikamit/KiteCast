@@ -21,6 +21,24 @@ def test_postback_checksum_rejects_forged():
     assert kite.verify_postback({}) is False
 
 
+def test_best_price_fallback_chain():
+    from kitecast.kite import best_price
+
+    q = {"last_price": 100.0,
+         "depth": {"buy": [{"price": 99.0}], "sell": [{"price": 101.0}]},
+         "ohlc": {"close": 95.0}}
+    assert best_price(q, "BUY") == 100.0            # LTP wins when present
+
+    q["last_price"] = 0                              # illiquid: no trades yet
+    assert best_price(q, "BUY") == 101.0             # buy at the ask
+    assert best_price(q, "SELL") == 99.0             # sell at the bid
+
+    q["depth"] = {"buy": [], "sell": []}
+    assert best_price(q, "BUY") == 95.0              # previous close
+
+    assert best_price({}, "BUY") is None
+
+
 def test_login_url():
     kite = KiteClient("key", "secret")
     assert kite.login_url() == "https://kite.zerodha.com/connect/login?v=3&api_key=key"

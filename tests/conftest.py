@@ -35,11 +35,6 @@ SAMPLE_QUOTE = {
 class FakeKite(KiteClient):
     """Real checksum verification; network calls stubbed."""
 
-    def __init__(self):
-        super().__init__("test_key", "test_secret", access_token="tok")
-        self.orders: list[dict] = []
-        self._next_id = 100
-
     def place_order(self, **kwargs):
         self.orders.append(kwargs)
         self._next_id += 1
@@ -49,9 +44,15 @@ class FakeKite(KiteClient):
         self._auth_headers()  # same login requirement as the real call
         return SAMPLE_INSTRUMENTS_CSV
 
+    def __init__(self):
+        super().__init__("test_key", "test_secret", access_token="tok")
+        self.orders: list[dict] = []
+        self._next_id = 100
+        self.quote_data = dict(SAMPLE_QUOTE)
+
     def quote(self, *keys):
         self._auth_headers()
-        return {k: dict(SAMPLE_QUOTE) for k in keys}
+        return {k: dict(self.quote_data) for k in keys}
 
     def order_margins(self, order):
         self._auth_headers()

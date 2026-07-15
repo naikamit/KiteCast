@@ -10,7 +10,7 @@ import logging
 from . import basket, instruments
 from .config import Settings
 from .db import Ledger
-from .kite import KiteClient, KiteError
+from .kite import KiteClient, KiteError, best_price
 from .telegram import TelegramClient
 
 log = logging.getLogger("kitecast")
@@ -36,12 +36,7 @@ class TradeShareService:
         by Kite anyway, with a less actionable message."""
         if order_type != "MARKET" or not basket.is_commodity_option(exchange, tradingsymbol):
             return order_type, price
-        key = f"{exchange}:{tradingsymbol}"
-        try:
-            ref = self.kite.quote(key)[key]["last_price"] or ref_fallback
-        except Exception as e:
-            log.warning("quote failed for %s: %s", key, e)
-            ref = ref_fallback  # e.g. expired session on a friend's late tap
+        ref = best_price(self._quote(exchange, tradingsymbol), side) or ref_fallback
         if not ref:
             if strict:
                 raise KiteError(
@@ -182,19 +177,29 @@ class TradeShareService:
             self.ledger.mark_failed(trade["id"])
         return True
 
-    def _ltp(self, exchange: str, tradingsymbol: str) -> float | None:
+    def _quote(self, exchange: str, tradingsymbol: str) -> dict:
         key = f"{exchange}:{tradingsymbol}"
         try:
-            return self.kite.quote(key)[key]["last_price"] or None
+            return self.kite.quote(key)[key] or {}
         except Exception as e:
-            log.warning("ltp lookup failed for %s: %s", key, e)
-            return None
+            log.warning("quote failed for %s: %s", key, e)
+            return {}
+
+    def _ltp(self, exchange: str, tradingsymbol: str) -> float | None:
+        return self._quote(exchange, tradingsymbol).get("last_price") or None
 
     def price_context(self, trade, order) -> dict:
         """Live price info for a mirror page: LTP, the friend's units, the
         estimated order value (limit price if set, else LTP, × units), days
-        to expiry, and strike distance from ATM for options."""
-        ltp = self._ltp(trade["exchange"], trade["tradingsymbol"])
+        to expiry, and strike distance from ATM for options. Falls back to
+        the order book touch, then previous close, when there's no LTP."""
+        q = self._quote(trade["exchange"], trade["tradingsymbol"])
+        ltp = q.get("last_price") or None
+        best = best_price(q, order["transaction_type"])
+        price_note = None
+        if not ltp and best:
+            book = (q.get("depth") or {}).get("sell" if order["transaction_type"] == "BUY" else "buy")
+            price_note = "best available, from order book" if (book and book[0].get("price")) else "previous close"
         inst = None
         if self.store is not None:
             try:
@@ -204,7 +209,7 @@ class TradeShareService:
         lot_size = (inst and inst["lot_size"]) or 1
         qty = order["quantity"]
         units = qty * lot_size if trade["exchange"] == "MCX" else qty
-        ref = order.get("price") or ltp
+        ref = order.get("price") or best
         dte = atm_pct = None
         if inst:
             dte = instruments.days_to_expiry(inst["expiry"])
@@ -217,7 +222,8 @@ class TradeShareService:
                 if u_ltp:
                     atm_pct = round((inst["strike"] - u_ltp) / u_ltp * 100, 1)
         return {
-            "ltp": ltp, "lot_size": lot_size, "units": units,
+            "ltp": ltp or best, "price_note": price_note,
+            "lot_size": lot_size, "units": units,
             "est_value": round(ref * units, 2) if ref else None,
             "dte": dte, "atm_pct": atm_pct,
         }
@@ -264,7 +270,8 @@ class TradeShareService:
             return False
         trade = self.ledger.trade(share["trade_id"])
         friend = self.ledger.friend(share["friend_id"])
-        ltp = self._ltp(trade["exchange"], trade["tradingsymbol"])
+        nudge_side = trade["side"] if share["leg"] == "ENTRY" else ("SELL" if trade["side"] == "BUY" else "BUY")
+        ltp = best_price(self._quote(trade["exchange"], trade["tradingsymbol"]), nudge_side)
         sent = self.telegram.send(*self._message(trade, friend, share, nudge=True, ltp=ltp))
         self.ledger.record_nudge(share_id)
         if share["status"] == "PREBUILT":
@@ -291,7 +298,8 @@ class TradeShareService:
             self._build_shares(trade_id)  # placement-timing exits before fill
         trade = self.ledger.trade(trade_id)
         shares = [s for s in self.ledger.shares_for_trade(trade_id, leg) if s["status"] != "CONFIRMED"]
-        ltp = self._ltp(trade["exchange"], trade["tradingsymbol"]) if shares else None
+        leg_side = trade["side"] if leg == "ENTRY" else ("SELL" if trade["side"] == "BUY" else "BUY")
+        ltp = best_price(self._quote(trade["exchange"], trade["tradingsymbol"]), leg_side) if shares else None
         pushable, messages = [], []
         for share in shares:
             friend = self.ledger.friend(share["friend_id"])
