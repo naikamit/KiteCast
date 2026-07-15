@@ -35,11 +35,16 @@
   <p class="dim" style="margin-top:-.5rem">Fires on <b>my</b> Kite. On my fill it writes the ledger, pre-builds every friend's exit link, and fans the entry mirror to their phones. Trades placed in the Kite app directly are never shared.</p>
   <form class="ticket" method="post" action="/trade" id="ticket">
     <div style="grid-column:1/-1; position:relative">
-      <label>Contract — search live Kite instruments</label>
-      <input id="csearch" placeholder="crudeoil fut, gold aug, nifty 25000 ce…" autocomplete="off" spellcheck="false" required>
+      <label>Underlying — search, then pick type / expiry / strike below</label>
+      <input id="csearch" placeholder="crudeoil, silver, gold, nifty…" autocomplete="off" spellcheck="false" required>
       <input type="hidden" name="tradingsymbol" id="f_symbol">
       <input type="hidden" name="exchange" id="f_exchange">
       <div id="results" class="results" hidden></div>
+    </div>
+    <div id="chainpick" style="grid-column:1/-1; display:none; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.6rem">
+      <div><label>Type</label><select id="p_type"></select></div>
+      <div id="p_expirywrap"><label>Expiry (DTE)</label><select id="p_expiry"></select></div>
+      <div id="p_strikewrap"><label>Strike (vs ATM)</label><select id="p_strike"></select></div>
     </div>
     <div><label>Side</label>
       <select name="side"><option>BUY</option><option>SELL</option></select></div>
@@ -62,11 +67,15 @@
 <script>
 const $ = id => document.getElementById(id);
 const search = $('csearch'), results = $('results'), cinfo = $('cinfo');
-let timer = null, selected = null;
-
-const atmTxt = x => x.atm_pct != null ? ` · ATM${x.atm_pct >= 0 ? '+' : ''}${x.atm_pct}%` : '';
-const dteTxt = x => x.dte != null ? `${x.dte} DTE` : '';
+let timer = null, selected = null, chain = null;
 let curItems = [], activeIdx = -1;
+
+const fmt = v => (v ?? v === 0) ? Number(v).toLocaleString('en-IN') : '—';
+const expLabel = (expiry, dte) => {
+  const d = new Date(expiry + 'T00:00:00');
+  const date = d.toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: '2-digit'});
+  return dte != null ? `${date} · ${dte} DTE` : date;
+};
 
 function highlight(i) {
   const els = results.querySelectorAll('.ritem[data-i]');
@@ -76,28 +85,27 @@ function highlight(i) {
 }
 
 search.addEventListener('input', () => {
-  selected = null; $('f_symbol').value = ''; $('f_exchange').value = '';
-  cinfo.hidden = true; $('costinfo').hidden = true;
+  selected = null; chain = null; $('f_symbol').value = ''; $('f_exchange').value = '';
+  cinfo.hidden = true; $('costinfo').hidden = true; $('chainpick').style.display = 'none';
   clearTimeout(timer);
   const q = search.value.trim();
   if (q.length < 2) { results.hidden = true; return; }
   timer = setTimeout(async () => {
-    const r = await fetch('/api/instruments?q=' + encodeURIComponent(q));
+    const r = await fetch('/api/underlyings?q=' + encodeURIComponent(q));
     if (!r.ok) {
       const err = (await r.json()).detail || 'search failed';
       results.innerHTML = `<div class="ritem dim">${err}</div>`;
       results.hidden = false; return;
     }
     curItems = await r.json();
-    results.innerHTML = curItems.length ? curItems.map((x, i) =>
+    results.innerHTML = curItems.length ? curItems.map((u, i) =>
       `<div class="ritem" data-i="${i}">
-         <b>${x.tradingsymbol}</b> <span class="dim">${x.exchange} · ${x.instrument_type}${atmTxt(x)}</span><br>
-         <span class="dim">${x.name}${x.dte != null ? ' · ' + dteTxt(x) : ''} · lot ${x.lot_size}</span>
+         <b>${u.name}</b> <span class="dim">${u.exchange}${u.futures ? ' · FUT' : ''}${u.options ? ' · options' : ''}${u.equity ? ' · EQ' : ''}</span>
        </div>`).join('') : '<div class="ritem dim">no matches</div>';
     results.hidden = false;
     highlight(curItems.length ? 0 : -1);
     results.querySelectorAll('.ritem[data-i]').forEach(el =>
-      el.addEventListener('mousedown', () => select(curItems[el.dataset.i])));
+      el.addEventListener('mousedown', () => pickUnderlying(curItems[el.dataset.i])));
   }, 250);
 });
 
@@ -105,25 +113,85 @@ search.addEventListener('keydown', e => {
   if (results.hidden || !curItems.length) return;
   if (e.key === 'ArrowDown') { e.preventDefault(); highlight(Math.min(activeIdx + 1, curItems.length - 1)); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(Math.max(activeIdx - 1, 0)); }
-  else if (e.key === 'Enter') { e.preventDefault(); if (activeIdx >= 0) select(curItems[activeIdx]); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (activeIdx >= 0) pickUnderlying(curItems[activeIdx]); }
   else if (e.key === 'Escape') { results.hidden = true; }
 });
 
-async function select(x) {
-  selected = x;
-  search.value = `${x.exchange}:${x.tradingsymbol}`;
-  $('f_symbol').value = x.tradingsymbol;
-  $('f_exchange').value = x.exchange;
+async function pickUnderlying(u) {
+  search.value = `${u.exchange}:${u.name}`;
   results.hidden = true;
+  const r = await fetch(`/api/chain?exchange=${u.exchange}&name=${encodeURIComponent(u.name)}`);
+  if (!r.ok) { cinfo.innerHTML = '<span class="dim">chain unavailable</span>'; cinfo.hidden = false; return; }
+  chain = await r.json();
+  const t = $('p_type');
+  t.innerHTML = '';
+  if (chain.futures.length) t.add(new Option('Future', 'FUT'));
+  if (chain.options.length) { t.add(new Option('Call (CE)', 'CE')); t.add(new Option('Put (PE)', 'PE')); }
+  if (chain.equities.length) t.add(new Option('Stock (EQ)', 'EQ'));
+  $('chainpick').style.display = 'grid';
+  onType();
+}
+
+function onType() {
+  if (!chain) return;
+  const type = $('p_type').value;
+  if (type === 'EQ') {
+    $('p_expirywrap').style.display = 'none'; $('p_strikewrap').style.display = 'none';
+    chooseSymbol(chain.exchange, chain.equities[0].tradingsymbol);
+    return;
+  }
+  $('p_expirywrap').style.display = '';
+  const e = $('p_expiry');
+  e.innerHTML = '';
+  const rows = type === 'FUT' ? chain.futures
+    : [...new Map(chain.options.filter(o => o.type === type).map(o => [o.expiry, o])).values()];
+  rows.forEach(x => e.add(new Option(expLabel(x.expiry, x.dte), x.expiry)));
+  onExpiry();
+}
+
+function onExpiry() {
+  if (!chain) return;
+  const type = $('p_type').value, expiry = $('p_expiry').value;
+  if (type === 'FUT') {
+    $('p_strikewrap').style.display = 'none';
+    const f = chain.futures.find(x => x.expiry === expiry);
+    if (f) chooseSymbol(chain.exchange, f.tradingsymbol);
+    return;
+  }
+  $('p_strikewrap').style.display = '';
+  const s = $('p_strike');
+  s.innerHTML = '';
+  const rows = chain.options.filter(o => o.type === type && o.expiry === expiry)
+    .sort((a, b) => a.strike - b.strike);
+  const u = chain.underlying_ltp;
+  let best = 0, bestDiff = Infinity;
+  rows.forEach((o, i) => {
+    const pct = u ? (o.strike - u) / u * 100 : null;
+    const lbl = fmt(o.strike) + (pct != null ? ` · ATM${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%` : '');
+    s.add(new Option(lbl, o.tradingsymbol));
+    if (u && Math.abs(o.strike - u) < bestDiff) { bestDiff = Math.abs(o.strike - u); best = i; }
+  });
+  s.selectedIndex = rows.length ? best : -1;
+  if (rows.length) chooseSymbol(chain.exchange, s.value);
+}
+
+$('p_type').addEventListener('change', onType);
+$('p_expiry').addEventListener('change', onExpiry);
+$('p_strike').addEventListener('change', () => chooseSymbol(chain.exchange, $('p_strike').value));
+
+async function chooseSymbol(exchange, tradingsymbol) {
+  selected = {exchange, tradingsymbol};
+  $('f_symbol').value = tradingsymbol;
+  $('f_exchange').value = exchange;
+  cinfo.innerHTML = '<span class="dim">loading contract…</span>'; cinfo.hidden = false;
+  const r = await fetch(`/api/contract?exchange=${exchange}&tradingsymbol=${encodeURIComponent(tradingsymbol)}`);
+  if (!r.ok) { cinfo.innerHTML = '<span class="dim">contract info unavailable</span>'; return; }
+  const c = await r.json(), q = c.quote;
   // MCX quantity is in lots; equity/derivative segments take units in lot-size multiples.
-  const step = x.exchange === 'MCX' ? 1 : (x.lot_size || 1);
+  const step = exchange === 'MCX' ? 1 : (c.lot_size || 1);
   const qty = $('f_qty');
   qty.min = step; qty.step = step; if (!qty.value) qty.value = step;
-  $('qtyhint').textContent = x.exchange === 'MCX' ? '(lots)' : (x.lot_size > 1 ? `(units, lot ${x.lot_size})` : '');
-  cinfo.innerHTML = '<span class="dim">loading contract…</span>'; cinfo.hidden = false;
-  const r = await fetch(`/api/contract?exchange=${x.exchange}&tradingsymbol=${encodeURIComponent(x.tradingsymbol)}`);
-  if (!r.ok) { cinfo.innerHTML = '<span class="dim">contract info unavailable</span>'; return; }
-  const c = await r.json(), q = c.quote, fmt = v => (v ?? v === 0) ? Number(v).toLocaleString('en-IN') : '—';
+  $('qtyhint').textContent = exchange === 'MCX' ? '(lots)' : (c.lot_size > 1 ? `(units, lot ${c.lot_size})` : '');
   const chg = q.net_change ?? 0;
   cinfo.innerHTML = `
     <div class="cell"><label>Last price</label><b>${fmt(q.last_price)}</b>

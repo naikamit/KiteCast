@@ -39,6 +39,28 @@ def test_instrument_search_api(client):
     assert "dte" in hits[0] and hits[0]["atm_pct"] is None  # futures: no strike
 
 
+def test_underlying_search_and_chain(client):
+    """Ticker search finds underlyings; the chain feeds the type/expiry/strike
+    dropdowns so one front-series expiry can't flood the results."""
+    hits = client.get("/api/underlyings?q=crude").json()
+    assert hits == [{"name": "CRUDEOIL", "exchange": "MCX",
+                     "futures": 2, "options": 1, "equity": 0}]
+
+    chain = client.get("/api/chain?exchange=MCX&name=CRUDEOIL").json()
+    assert [f["tradingsymbol"] for f in chain["futures"]] == [
+        "CRUDEOIL25JULFUT", "CRUDEOIL25AUGFUT"]      # every expiry present
+    assert all("dte" in f for f in chain["futures"])
+    opt = chain["options"][0]
+    assert (opt["tradingsymbol"], opt["strike"], opt["type"]) == ("CRUDEOIL26JUL5500CE", 5500.0, "CE")
+    assert chain["underlying_ltp"] == 6250.0          # anchors the ATM% labels
+
+    assert client.get("/api/chain?exchange=MCX&name=NOPE").status_code == 404
+
+    eq = client.get("/api/underlyings?q=reliance").json()[0]
+    assert eq["equity"] == 1
+    assert client.get("/api/chain?exchange=NSE&name=RELIANCE%20INDUSTRIES").json()["equities"][0]["tradingsymbol"] == "RELIANCE"
+
+
 def test_search_and_contract_show_atm_distance(client):
     """Options carry strike distance from the underlying future's LTP."""
     hits = client.get("/api/instruments?q=crudeoil 5500").json()

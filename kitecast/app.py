@@ -163,6 +163,26 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                     keys.add(f"{fut['exchange']}:{fut['tradingsymbol']}")
         return keys
 
+    @app.get("/api/underlyings")
+    def search_underlyings_api(q: str = ""):
+        try:
+            return store.search_underlyings(q)
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+
+    @app.get("/api/chain")
+    def chain_api(exchange: str, name: str):
+        try:
+            data = store.chain(exchange, name)
+            fut = store.underlying_future(exchange, name)
+            ltps = cached_ltps({f"{exchange}:{fut['tradingsymbol']}"} if fut else set())
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+        if not (data["futures"] or data["options"] or data["equities"]):
+            raise HTTPException(404, "Unknown underlying")
+        data["underlying_ltp"] = next(iter(ltps.values()), None)
+        return data
+
     @app.get("/api/instruments")
     def search_instruments(q: str = ""):
         try:
