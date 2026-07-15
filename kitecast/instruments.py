@@ -27,6 +27,17 @@ def days_to_expiry(expiry: str, today=None) -> int | None:
     return (d - (today or datetime.now(IST).date())).days
 
 
+def moneyness(atm_pct: float | None, instrument_type: str) -> str | None:
+    """Human moneyness from strike-vs-spot %: a CE above spot is OTM, a PE
+    above spot is ITM."""
+    if atm_pct is None or instrument_type not in ("CE", "PE"):
+        return None
+    if abs(atm_pct) < 0.05:
+        return "ATM"
+    otm = (atm_pct > 0) == (instrument_type == "CE")
+    return f"{abs(atm_pct):.1f}% {'OTM' if otm else 'ITM'}"
+
+
 class InstrumentStore:
     def __init__(self, kite, ttl_seconds: int = 12 * 3600):
         self.kite = kite

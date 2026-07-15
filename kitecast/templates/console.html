@@ -71,6 +71,12 @@ let timer = null, selected = null, chain = null;
 let curItems = [], activeIdx = -1;
 
 const fmt = v => (v ?? v === 0) ? Number(v).toLocaleString('en-IN') : '—';
+const mny = (pct, type) => {
+  if (pct == null) return '';
+  if (Math.abs(pct) < 0.05) return ' · ATM';
+  const otm = (pct > 0) === (type === 'CE');
+  return ` · ${Math.abs(pct).toFixed(1)}% ${otm ? 'OTM' : 'ITM'}`;
+};
 const expLabel = (expiry, dte) => {
   const d = new Date(expiry + 'T00:00:00');
   const date = d.toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: '2-digit'});
@@ -167,7 +173,7 @@ function onExpiry() {
   let best = 0, bestDiff = Infinity;
   rows.forEach((o, i) => {
     const pct = u ? (o.strike - u) / u * 100 : null;
-    const lbl = fmt(o.strike) + (pct != null ? ` · ATM${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%` : '');
+    const lbl = fmt(o.strike) + mny(pct, type);
     s.add(new Option(lbl, o.tradingsymbol));
     if (u && Math.abs(o.strike - u) < bestDiff) { bestDiff = Math.abs(o.strike - u); best = i; }
   });
@@ -202,7 +208,7 @@ async function chooseSymbol(exchange, tradingsymbol) {
     <div class="cell"><label>Circuit limits</label>${fmt(q.lower_circuit_limit)} – ${fmt(q.upper_circuit_limit)}</div>
     <div class="cell"><label>Lot / Tick</label>${fmt(c.lot_size)} / ${c.tick_size}</div>
     <div class="cell"><label>Expiry</label>${c.dte != null ? `<b>${c.dte} DTE</b> <span class="dim">(${c.expiry})</span>` : (c.expiry || '—')}</div>
-    <div class="cell"><label>Segment</label>${c.segment} · ${c.instrument_type}${c.strike ? ' · strike ' + fmt(c.strike) + (c.atm_pct != null ? ` <b>(ATM${c.atm_pct >= 0 ? '+' : ''}${c.atm_pct}%)</b>` : '') : ''}</div>`;
+    <div class="cell"><label>Segment</label>${c.segment} · ${c.instrument_type}${c.strike ? ' · strike ' + fmt(c.strike) + (c.moneyness ? ` <b>(${c.moneyness})</b>` : '') : ''}</div>`;
   if ($('f_ordertype').value === 'LIMIT' && !$('f_price').value && q.last_price) $('f_price').value = q.last_price;
   $('f_price').step = c.tick_size || 0.05;
   fetchCost();

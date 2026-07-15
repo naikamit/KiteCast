@@ -30,7 +30,7 @@
   <div class="dim">{{ order['exchange'] }} · {{ order['product'] }} ·
     {% if order['order_type'] == 'LIMIT' %}LIMIT @ ₹{{ '{:,.2f}'.format(order['price']) }}{% else %}MARKET{% endif %}
     {%- if price['dte'] is not none %} · {{ price['dte'] }} DTE{% endif %}
-    {%- if price['atm_pct'] is not none %} · ATM{{ '%+.1f' % price['atm_pct'] }}%{% endif %}</div>
+    {%- if price['moneyness'] %} · <b>{{ price['moneyness'] }}</b>{% endif %}</div>
   <div style="margin:.7rem 0 .2rem; padding:.55rem .7rem; background:#0b0e13; border:1px solid #2a3240; border-radius:8px; font-size:.95rem">
     {% if price['ltp'] %}
     <div>{{ 'Last price' if not price['price_note'] else 'Price' }} <b>₹{{ '{:,.2f}'.format(price['ltp']) }}</b>

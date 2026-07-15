@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
-from .instruments import InstrumentStore, days_to_expiry
+from .instruments import InstrumentStore, days_to_expiry, moneyness
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
 from .telegram import TelegramClient
@@ -145,13 +145,14 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return {k: v[1] for k, v in ltp_cache.items() if k in keys}
 
     def enrich(inst: dict, underlying_ltps: dict[str, float]) -> dict:
-        """Add dte and, for options, strike distance from ATM (signed %)."""
-        out = {**inst, "dte": days_to_expiry(inst["expiry"]), "atm_pct": None}
+        """Add dte and, for options, strike distance from ATM plus moneyness."""
+        out = {**inst, "dte": days_to_expiry(inst["expiry"]), "atm_pct": None, "moneyness": None}
         if inst["strike"] and inst["instrument_type"] in ("CE", "PE"):
             fut = store.underlying_future(inst["exchange"], inst["name"])
             u_ltp = fut and underlying_ltps.get(f"{fut['exchange']}:{fut['tradingsymbol']}")
             if u_ltp:
                 out["atm_pct"] = round((inst["strike"] - u_ltp) / u_ltp * 100, 1)
+                out["moneyness"] = moneyness(out["atm_pct"], inst["instrument_type"])
         return out
 
     def underlying_keys(instruments: list[dict]) -> set[str]:

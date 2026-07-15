@@ -66,9 +66,11 @@ def test_search_and_contract_show_atm_distance(client):
     hits = client.get("/api/instruments?q=crudeoil 5500").json()
     ce = next(h for h in hits if h["tradingsymbol"] == "CRUDEOIL26JUL5500CE")
     assert ce["atm_pct"] == -12.0        # (5500 - 6250) / 6250
+    assert ce["moneyness"] == "12.0% ITM"  # CE below spot is in the money
 
     c = client.get("/api/contract?exchange=MCX&tradingsymbol=CRUDEOIL26JUL5500CE").json()
     assert c["atm_pct"] == -12.0
+    assert c["moneyness"] == "12.0% ITM"
     assert "dte" in c
 
 

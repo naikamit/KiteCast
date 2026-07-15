@@ -51,6 +51,18 @@ def test_days_to_expiry():
     assert days_to_expiry("garbage", today) is None
 
 
+def test_moneyness_labels():
+    from kitecast.instruments import moneyness
+
+    assert moneyness(5.0, "CE") == "5.0% OTM"      # call above spot
+    assert moneyness(-5.0, "CE") == "5.0% ITM"     # call below spot
+    assert moneyness(5.0, "PE") == "5.0% ITM"      # put above spot
+    assert moneyness(-5.0, "PE") == "5.0% OTM"     # put below spot
+    assert moneyness(0.0, "CE") == "ATM"
+    assert moneyness(None, "CE") is None
+    assert moneyness(5.0, "FUT") is None
+
+
 def test_underlying_future_is_nearest_expiry(store):
     fut = store.underlying_future("MCX", "CRUDEOIL")
     assert fut["tradingsymbol"] == "CRUDEOIL25JULFUT"   # 07-17 beats 08-19

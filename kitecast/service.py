@@ -210,7 +210,7 @@ class TradeShareService:
         qty = order["quantity"]
         units = qty * lot_size if trade["exchange"] == "MCX" else qty
         ref = order.get("price") or best
-        dte = atm_pct = None
+        dte = atm_pct = mny = None
         if inst:
             dte = instruments.days_to_expiry(inst["expiry"])
             if inst["strike"] and inst["instrument_type"] in ("CE", "PE"):
@@ -221,11 +221,12 @@ class TradeShareService:
                 u_ltp = fut and self._ltp(fut["exchange"], fut["tradingsymbol"])
                 if u_ltp:
                     atm_pct = round((inst["strike"] - u_ltp) / u_ltp * 100, 1)
+                    mny = instruments.moneyness(atm_pct, inst["instrument_type"])
         return {
             "ltp": ltp or best, "price_note": price_note,
             "lot_size": lot_size, "units": units,
             "est_value": round(ref * units, 2) if ref else None,
-            "dte": dte, "atm_pct": atm_pct,
+            "dte": dte, "atm_pct": atm_pct, "moneyness": mny,
         }
 
     def build_mirror_order(self, share, trade) -> dict:
