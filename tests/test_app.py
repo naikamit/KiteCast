@@ -36,6 +36,18 @@ def test_instrument_search_api(client):
     hits = client.get("/api/instruments?q=crudeoil fut").json()
     assert hits[0]["tradingsymbol"] == "CRUDEOIL25JULFUT"
     assert hits[0]["exchange"] == "MCX"
+    assert "dte" in hits[0] and hits[0]["atm_pct"] is None  # futures: no strike
+
+
+def test_search_and_contract_show_atm_distance(client):
+    """Options carry strike distance from the underlying future's LTP."""
+    hits = client.get("/api/instruments?q=crudeoil 5500").json()
+    ce = next(h for h in hits if h["tradingsymbol"] == "CRUDEOIL26JUL5500CE")
+    assert ce["atm_pct"] == -12.0        # (5500 - 6250) / 6250
+
+    c = client.get("/api/contract?exchange=MCX&tradingsymbol=CRUDEOIL26JUL5500CE").json()
+    assert c["atm_pct"] == -12.0
+    assert "dte" in c
 
 
 def test_instrument_search_needs_login(client, kite):

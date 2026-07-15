@@ -47,7 +47,8 @@
              overflow-y:auto; background:#0b0e13; border:1px solid var(--line);
              border-radius:0 0 8px 8px; }
   .ritem { padding:.45rem .6rem; cursor:pointer; font-size:.88rem; }
-  .ritem:hover { background:var(--card); }
+  .ritem:hover, .ritem.active { background:var(--card); }
+  .ritem.active { box-shadow:inset 2px 0 0 var(--blue); }
   .cinfo { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
            gap:.6rem; margin-top:.9rem; padding-top:.9rem; border-top:1px solid var(--line);
            font-size:.9rem; }

@@ -37,3 +37,21 @@ def test_store_requires_kite_login(store, kite):
     kite.access_token = None
     with pytest.raises(KiteError):
         store.search("crudeoil")
+
+
+def test_days_to_expiry():
+    from datetime import date
+
+    from kitecast.instruments import days_to_expiry
+
+    today = date(2026, 7, 11)
+    assert days_to_expiry("2026-07-17", today) == 6
+    assert days_to_expiry("2026-07-11", today) == 0
+    assert days_to_expiry("", today) is None
+    assert days_to_expiry("garbage", today) is None
+
+
+def test_underlying_future_is_nearest_expiry(store):
+    fut = store.underlying_future("MCX", "CRUDEOIL")
+    assert fut["tradingsymbol"] == "CRUDEOIL25JULFUT"   # 07-17 beats 08-19
+    assert store.underlying_future("MCX", "NOPE") is None

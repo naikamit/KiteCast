@@ -7,7 +7,7 @@ directly in the Kite app never enter the ledger and are never shared.
 
 import logging
 
-from . import basket
+from . import basket, instruments
 from .config import Settings
 from .db import Ledger
 from .kite import KiteClient, KiteError
@@ -191,22 +191,35 @@ class TradeShareService:
             return None
 
     def price_context(self, trade, order) -> dict:
-        """Live price info for a mirror page: LTP, the friend's units, and the
-        estimated order value (limit price if set, else LTP, × units)."""
+        """Live price info for a mirror page: LTP, the friend's units, the
+        estimated order value (limit price if set, else LTP, × units), days
+        to expiry, and strike distance from ATM for options."""
         ltp = self._ltp(trade["exchange"], trade["tradingsymbol"])
-        lot_size = 1
+        inst = None
         if self.store is not None:
             try:
                 inst = self.store.get(trade["exchange"], trade["tradingsymbol"])
-                lot_size = (inst and inst["lot_size"]) or 1
             except Exception:
                 pass
+        lot_size = (inst and inst["lot_size"]) or 1
         qty = order["quantity"]
         units = qty * lot_size if trade["exchange"] == "MCX" else qty
         ref = order.get("price") or ltp
+        dte = atm_pct = None
+        if inst:
+            dte = instruments.days_to_expiry(inst["expiry"])
+            if inst["strike"] and inst["instrument_type"] in ("CE", "PE"):
+                try:
+                    fut = self.store.underlying_future(trade["exchange"], inst["name"])
+                except Exception:
+                    fut = None
+                u_ltp = fut and self._ltp(fut["exchange"], fut["tradingsymbol"])
+                if u_ltp:
+                    atm_pct = round((inst["strike"] - u_ltp) / u_ltp * 100, 1)
         return {
             "ltp": ltp, "lot_size": lot_size, "units": units,
             "est_value": round(ref * units, 2) if ref else None,
+            "dte": dte, "atm_pct": atm_pct,
         }
 
     def build_mirror_order(self, share, trade) -> dict:

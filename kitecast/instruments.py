@@ -10,8 +10,21 @@ import csv
 import io
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 TRADABLE_EXCHANGES = {"MCX", "NFO", "NSE", "BSE", "CDS", "BFO"}
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def days_to_expiry(expiry: str, today=None) -> int | None:
+    """Calendar days from today (IST) to the expiry date string."""
+    if not expiry:
+        return None
+    try:
+        d = datetime.strptime(expiry[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (d - (today or datetime.now(IST).date())).days
 
 
 class InstrumentStore:
@@ -76,3 +89,12 @@ class InstrumentStore:
     def get(self, exchange: str, tradingsymbol: str) -> dict | None:
         self._refresh_if_stale()
         return self._by_key.get((exchange.upper(), tradingsymbol.upper()))
+
+    def underlying_future(self, exchange: str, name: str) -> dict | None:
+        """Nearest-expiry future on the same exchange/name — the reference
+        price for how far an option strike sits from ATM."""
+        self._refresh_if_stale()
+        futs = [x for x in self._rows
+                if x["exchange"] == exchange and x["name"] == name
+                and x["instrument_type"] == "FUT"]
+        return min(futs, key=lambda x: x["expiry"] or "9999-99-99") if futs else None

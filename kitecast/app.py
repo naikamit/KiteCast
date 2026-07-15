@@ -4,6 +4,7 @@ mirror/redirect routes are token-scoped. The console itself is
 unauthenticated — keep the URL private."""
 
 import logging
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -13,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
-from .instruments import InstrumentStore
+from .instruments import InstrumentStore, days_to_expiry
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
 from .telegram import TelegramClient
@@ -127,12 +128,49 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
 
     # ---- contract data for the ticket (live Kite instrument master + quotes) ----
 
+    ltp_cache: dict[str, tuple[float, float]] = {}  # key -> (fetched_at, ltp)
+
+    def cached_ltps(keys: set[str]) -> dict[str, float]:
+        now = time.time()
+        missing = [k for k in keys if k not in ltp_cache or now - ltp_cache[k][0] > 20]
+        if missing:
+            try:
+                data = kite.quote(*missing)
+                for k in missing:
+                    lp = (data.get(k) or {}).get("last_price")
+                    if lp:
+                        ltp_cache[k] = (now, lp)
+            except KiteError:
+                pass
+        return {k: v[1] for k, v in ltp_cache.items() if k in keys}
+
+    def enrich(inst: dict, underlying_ltps: dict[str, float]) -> dict:
+        """Add dte and, for options, strike distance from ATM (signed %)."""
+        out = {**inst, "dte": days_to_expiry(inst["expiry"]), "atm_pct": None}
+        if inst["strike"] and inst["instrument_type"] in ("CE", "PE"):
+            fut = store.underlying_future(inst["exchange"], inst["name"])
+            u_ltp = fut and underlying_ltps.get(f"{fut['exchange']}:{fut['tradingsymbol']}")
+            if u_ltp:
+                out["atm_pct"] = round((inst["strike"] - u_ltp) / u_ltp * 100, 1)
+        return out
+
+    def underlying_keys(instruments: list[dict]) -> set[str]:
+        keys = set()
+        for inst in instruments:
+            if inst["strike"] and inst["instrument_type"] in ("CE", "PE"):
+                fut = store.underlying_future(inst["exchange"], inst["name"])
+                if fut:
+                    keys.add(f"{fut['exchange']}:{fut['tradingsymbol']}")
+        return keys
+
     @app.get("/api/instruments")
     def search_instruments(q: str = ""):
         try:
-            return store.search(q)
+            hits = store.search(q)
+            ltps = cached_ltps(underlying_keys(hits))
         except KiteError as e:
             raise HTTPException(409, str(e))
+        return [enrich(h, ltps) for h in hits]
 
     @app.get("/api/contract")
     def contract_info(exchange: str, tradingsymbol: str):
@@ -151,7 +189,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         best_bid = (depth.get("buy") or [{}])[0]
         best_ask = (depth.get("sell") or [{}])[0]
         return {
-            **inst,
+            **enrich(inst, cached_ltps(underlying_keys([inst]))),
             "quote": {
                 "last_price": q.get("last_price"),
                 "net_change": q.get("net_change"),

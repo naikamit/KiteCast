@@ -28,7 +28,9 @@
   <div class="dim">{{ 'Mirror entry' if leg == 'ENTRY' else 'CLOSE POSITION' }}</div>
   <div class="big">{{ order['transaction_type'] }} {{ order['quantity'] }} × {{ order['tradingsymbol'] }}</div>
   <div class="dim">{{ order['exchange'] }} · {{ order['product'] }} ·
-    {% if order['order_type'] == 'LIMIT' %}LIMIT @ ₹{{ '{:,.2f}'.format(order['price']) }}{% else %}MARKET{% endif %}</div>
+    {% if order['order_type'] == 'LIMIT' %}LIMIT @ ₹{{ '{:,.2f}'.format(order['price']) }}{% else %}MARKET{% endif %}
+    {%- if price['dte'] is not none %} · {{ price['dte'] }} DTE{% endif %}
+    {%- if price['atm_pct'] is not none %} · ATM{{ '%+.1f' % price['atm_pct'] }}%{% endif %}</div>
   <div style="margin:.7rem 0 .2rem; padding:.55rem .7rem; background:#0b0e13; border:1px solid #2a3240; border-radius:8px; font-size:.95rem">
     {% if price['ltp'] %}
     <div>Last price <b>₹{{ '{:,.2f}'.format(price['ltp']) }}</b></div>

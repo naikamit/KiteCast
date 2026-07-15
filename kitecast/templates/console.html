@@ -64,9 +64,20 @@ const $ = id => document.getElementById(id);
 const search = $('csearch'), results = $('results'), cinfo = $('cinfo');
 let timer = null, selected = null;
 
+const atmTxt = x => x.atm_pct != null ? ` · ATM${x.atm_pct >= 0 ? '+' : ''}${x.atm_pct}%` : '';
+const dteTxt = x => x.dte != null ? `${x.dte} DTE` : '';
+let curItems = [], activeIdx = -1;
+
+function highlight(i) {
+  const els = results.querySelectorAll('.ritem[data-i]');
+  els.forEach(el => el.classList.remove('active'));
+  if (i >= 0 && els[i]) { els[i].classList.add('active'); els[i].scrollIntoView({block: 'nearest'}); }
+  activeIdx = i;
+}
+
 search.addEventListener('input', () => {
   selected = null; $('f_symbol').value = ''; $('f_exchange').value = '';
-  cinfo.hidden = true;
+  cinfo.hidden = true; $('costinfo').hidden = true;
   clearTimeout(timer);
   const q = search.value.trim();
   if (q.length < 2) { results.hidden = true; return; }
@@ -77,16 +88,25 @@ search.addEventListener('input', () => {
       results.innerHTML = `<div class="ritem dim">${err}</div>`;
       results.hidden = false; return;
     }
-    const items = await r.json();
-    results.innerHTML = items.length ? items.map((x, i) =>
+    curItems = await r.json();
+    results.innerHTML = curItems.length ? curItems.map((x, i) =>
       `<div class="ritem" data-i="${i}">
-         <b>${x.tradingsymbol}</b> <span class="dim">${x.exchange} · ${x.instrument_type}</span><br>
-         <span class="dim">${x.name}${x.expiry ? ' · exp ' + x.expiry : ''} · lot ${x.lot_size}</span>
+         <b>${x.tradingsymbol}</b> <span class="dim">${x.exchange} · ${x.instrument_type}${atmTxt(x)}</span><br>
+         <span class="dim">${x.name}${x.dte != null ? ' · ' + dteTxt(x) : ''} · lot ${x.lot_size}</span>
        </div>`).join('') : '<div class="ritem dim">no matches</div>';
     results.hidden = false;
+    highlight(curItems.length ? 0 : -1);
     results.querySelectorAll('.ritem[data-i]').forEach(el =>
-      el.addEventListener('mousedown', () => select(items[el.dataset.i])));
+      el.addEventListener('mousedown', () => select(curItems[el.dataset.i])));
   }, 250);
+});
+
+search.addEventListener('keydown', e => {
+  if (results.hidden || !curItems.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); highlight(Math.min(activeIdx + 1, curItems.length - 1)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(Math.max(activeIdx - 1, 0)); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (activeIdx >= 0) select(curItems[activeIdx]); }
+  else if (e.key === 'Escape') { results.hidden = true; }
 });
 
 async function select(x) {
@@ -113,8 +133,8 @@ async function select(x) {
     <div class="cell"><label>Volume / OI</label>${fmt(q.volume)} / ${fmt(q.oi)}</div>
     <div class="cell"><label>Circuit limits</label>${fmt(q.lower_circuit_limit)} – ${fmt(q.upper_circuit_limit)}</div>
     <div class="cell"><label>Lot / Tick</label>${fmt(c.lot_size)} / ${c.tick_size}</div>
-    <div class="cell"><label>Expiry</label>${c.expiry || '—'}</div>
-    <div class="cell"><label>Segment</label>${c.segment} · ${c.instrument_type}${c.strike ? ' · strike ' + fmt(c.strike) : ''}</div>`;
+    <div class="cell"><label>Expiry</label>${c.dte != null ? `<b>${c.dte} DTE</b> <span class="dim">(${c.expiry})</span>` : (c.expiry || '—')}</div>
+    <div class="cell"><label>Segment</label>${c.segment} · ${c.instrument_type}${c.strike ? ' · strike ' + fmt(c.strike) + (c.atm_pct != null ? ` <b>(ATM${c.atm_pct >= 0 ? '+' : ''}${c.atm_pct}%)</b>` : '') : ''}</div>`;
   if ($('f_ordertype').value === 'LIMIT' && !$('f_price').value && q.last_price) $('f_price').value = q.last_price;
   $('f_price').step = c.tick_size || 0.05;
   fetchCost();
