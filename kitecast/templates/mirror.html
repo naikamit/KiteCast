@@ -27,7 +27,18 @@
   {% else %}
   <div class="dim">{{ 'Mirror entry' if leg == 'ENTRY' else 'CLOSE POSITION' }}</div>
   <div class="big">{{ order['transaction_type'] }} {{ order['quantity'] }} × {{ order['tradingsymbol'] }}</div>
-  <div class="dim">{{ order['exchange'] }} · {{ order['product'] }} · {{ order['order_type'] }}</div>
+  <div class="dim">{{ order['exchange'] }} · {{ order['product'] }} ·
+    {% if order['order_type'] == 'LIMIT' %}LIMIT @ ₹{{ '{:,.2f}'.format(order['price']) }}{% else %}MARKET{% endif %}</div>
+  <div style="margin:.7rem 0 .2rem; padding:.55rem .7rem; background:#0b0e13; border:1px solid #2a3240; border-radius:8px; font-size:.95rem">
+    {% if price['ltp'] %}
+    <div>Last price <b>₹{{ '{:,.2f}'.format(price['ltp']) }}</b></div>
+    {% else %}
+    <div class="dim">Live price unavailable right now — check in your Kite before confirming.</div>
+    {% endif %}
+    {% if price['est_value'] %}
+    <div class="dim">{{ '{:,}'.format(price['units']) }} units · est. value <b>₹{{ '{:,.2f}'.format(price['est_value']) }}</b></div>
+    {% endif %}
+  </div>
   <form id="basket" method="post" action="{{ basket_url }}">
     {% for k, v in fields.items() %}
     <input type="hidden" name="{{ k }}" value="{{ v }}">

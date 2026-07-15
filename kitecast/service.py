@@ -182,6 +182,33 @@ class TradeShareService:
             self.ledger.mark_failed(trade["id"])
         return True
 
+    def _ltp(self, exchange: str, tradingsymbol: str) -> float | None:
+        key = f"{exchange}:{tradingsymbol}"
+        try:
+            return self.kite.quote(key)[key]["last_price"] or None
+        except Exception as e:
+            log.warning("ltp lookup failed for %s: %s", key, e)
+            return None
+
+    def price_context(self, trade, order) -> dict:
+        """Live price info for a mirror page: LTP, the friend's units, and the
+        estimated order value (limit price if set, else LTP, × units)."""
+        ltp = self._ltp(trade["exchange"], trade["tradingsymbol"])
+        lot_size = 1
+        if self.store is not None:
+            try:
+                inst = self.store.get(trade["exchange"], trade["tradingsymbol"])
+                lot_size = (inst and inst["lot_size"]) or 1
+            except Exception:
+                pass
+        qty = order["quantity"]
+        units = qty * lot_size if trade["exchange"] == "MCX" else qty
+        ref = order.get("price") or ltp
+        return {
+            "ltp": ltp, "lot_size": lot_size, "units": units,
+            "est_value": round(ref * units, 2) if ref else None,
+        }
+
     def build_mirror_order(self, share, trade) -> dict:
         """Basket order for a friend's per-friend mirror page (scaled qty)."""
         return self._tap_time_order(trade, share["leg"], share["qty"])
@@ -224,7 +251,8 @@ class TradeShareService:
             return False
         trade = self.ledger.trade(share["trade_id"])
         friend = self.ledger.friend(share["friend_id"])
-        sent = self.telegram.send(*self._message(trade, friend, share, nudge=True))
+        ltp = self._ltp(trade["exchange"], trade["tradingsymbol"])
+        sent = self.telegram.send(*self._message(trade, friend, share, nudge=True, ltp=ltp))
         self.ledger.record_nudge(share_id)
         if share["status"] == "PREBUILT":
             self.ledger.mark_share_sent(share_id)
@@ -250,19 +278,21 @@ class TradeShareService:
             self._build_shares(trade_id)  # placement-timing exits before fill
         trade = self.ledger.trade(trade_id)
         shares = [s for s in self.ledger.shares_for_trade(trade_id, leg) if s["status"] != "CONFIRMED"]
+        ltp = self._ltp(trade["exchange"], trade["tradingsymbol"]) if shares else None
         pushable, messages = [], []
         for share in shares:
             friend = self.ledger.friend(share["friend_id"])
             if friend["telegram_chat_id"]:
                 pushable.append(share)
-                messages.append(self._message(trade, friend, share))
+                messages.append(self._message(trade, friend, share, ltp=ltp))
             # No chat id: manual-share friend — link is copyable on the board.
             self.ledger.mark_share_sent(share["id"])
         for share, sent in zip(pushable, self.telegram.fan_out(messages)):
             if not sent:
                 log.warning("telegram push failed share=%s", share["id"])
 
-    def _message(self, trade, friend, share, nudge: bool = False) -> tuple[str, str, str, str]:
+    def _message(self, trade, friend, share, nudge: bool = False,
+                 ltp: float | None = None) -> tuple[str, str, str, str]:
         url = basket.mirror_url(self.settings.base_url, share["token"])
         if share["leg"] == "ENTRY":
             action = f"{trade['side']} {share['qty']} × {trade['tradingsymbol']}"
@@ -272,5 +302,7 @@ class TradeShareService:
             action = f"CLOSE ({side}) {share['qty']} × {trade['tradingsymbol']}"
             button = "Close now"
         prefix = "⏰ Reminder — still pending:\n" if nudge else ""
-        text = f"{prefix}<b>{action}</b>\n{trade['exchange']} · {trade['product']} · one tap to confirm in your Kite."
+        price_bit = f"LTP ₹{ltp:,.2f} · " if ltp else ""
+        text = (f"{prefix}<b>{action}</b>\n{price_bit}{trade['exchange']} · {trade['product']}"
+                " · one tap to confirm in your Kite.")
         return (friend["telegram_chat_id"], text, button, url)

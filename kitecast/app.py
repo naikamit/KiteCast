@@ -278,6 +278,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         order = service.build_mirror_order(share, trade)
         return templates.TemplateResponse(request, "mirror.html", {
             "leg": share["leg"], "order": order,
+            "price": service.price_context(trade, order),
             "basket_url": basket.BASKET_URL,
             "fields": basket.basket_form_fields(settings.kite_api_key, order, token),
             "already_confirmed": share["status"] == "CONFIRMED",
@@ -295,6 +296,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         order = service.build_public_order(trade, leg)
         return templates.TemplateResponse(request, "mirror.html", {
             "leg": leg, "order": order,
+            "price": service.price_context(trade, order),
             "basket_url": basket.BASKET_URL,
             "fields": basket.basket_form_fields(settings.kite_api_key, order, token,
                                                 token_param="public_token"),

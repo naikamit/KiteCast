@@ -143,11 +143,14 @@ def test_public_link_works_with_no_friends_configured(client, ledger, kite, tele
     assert kite.orders == [] and telegram.sent == []
     trade = ledger.trades()[0]
 
-    # Entry link renders the pre-filled basket at base qty.
+    # Entry link renders the pre-filled basket at base qty, with the live
+    # price and estimated order value visible before confirming.
     r = client.get(f"/t/{trade['public_entry_token']}")
     assert r.status_code == 200
     assert "kite.zerodha.com/connect/basket" in r.text
     assert "CRUDEOIL25JULFUT" in r.text and "BUY" in r.text
+    assert "₹6,250.00" in r.text                    # LTP
+    assert "₹62,500,000.00" in r.text               # 100 lots × 100 units × 6250
 
     # Close link renders the opposite side.
     r = client.get(f"/t/{trade['public_exit_token']}")

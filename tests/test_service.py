@@ -22,12 +22,14 @@ def test_entry_fill_writes_ledger_and_fans_mirrors(service, kite, telegram, frie
     assert trade["status"] == "FILLED"
     assert trade["entry_fill_price"] == 6250.0
 
-    # Fan-out to the 3 active friends only, per-friend scaled.
+    # Fan-out to the 3 active friends only, per-friend scaled, with the
+    # live price in the push text.
     entry_shares = ledger.shares_for_trade(trade_id, "ENTRY")
     assert [s["qty"] for s in entry_shares] == [100, 50, 200]
     assert all(s["status"] == "SENT" for s in entry_shares)
     assert len(telegram.sent) == 3
     assert all("/m/" in msg[3] for msg in telegram.sent)
+    assert all("LTP ₹6,250.00" in msg[1] for msg in telegram.sent)
 
     # Acceptance: exit links auto-built at entry, held for Close & Share (NFR-1).
     exit_shares = ledger.shares_for_trade(trade_id, "EXIT")
