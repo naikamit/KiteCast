@@ -61,6 +61,28 @@ def test_underlying_search_and_chain(client):
     assert client.get("/api/chain?exchange=NSE&name=RELIANCE%20INDUSTRIES").json()["equities"][0]["tradingsymbol"] == "RELIANCE"
 
 
+def test_chain_atm_survives_expired_session(client, kite):
+    """The prod symptom: token died overnight, quotes 403, and the strike
+    dropdown lost its ATM window/labels. The chain must fall back to the
+    dump's previous close so ATM context keeps working."""
+    client.get("/api/underlyings?q=crude")   # loads the instrument dump
+    kite.access_token = None                 # overnight token death
+
+    chain = client.get("/api/chain?exchange=MCX&name=CRUDEOIL").json()
+    assert chain["underlying_ltp"] == 6200.0            # dump prev close
+    assert chain["underlying_ltp_source"] == "prev close"
+
+    hits = client.get("/api/instruments?q=crudeoil 5500").json()
+    ce = next(h for h in hits if h["tradingsymbol"] == "CRUDEOIL26JUL5500CE")
+    assert ce["moneyness"] == "11.3% ITM"               # (5500-6200)/6200
+
+    # With a live session, the live quote wins over the dump price.
+    kite.access_token = "tok"
+    chain = client.get("/api/chain?exchange=MCX&name=CRUDEOIL").json()
+    assert chain["underlying_ltp"] == 6250.0
+    assert chain["underlying_ltp_source"] == "live"
+
+
 def test_search_and_contract_show_atm_distance(client):
     """Options carry strike distance from the underlying future's LTP."""
     hits = client.get("/api/instruments?q=crudeoil 5500").json()

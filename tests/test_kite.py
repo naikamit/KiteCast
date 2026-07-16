@@ -21,6 +21,27 @@ def test_postback_checksum_rejects_forged():
     assert kite.verify_postback({}) is False
 
 
+def test_token_exception_clears_access_token(monkeypatch):
+    """A dead daily token must flip the client back to logged-out, so the
+    console shows the login banner instead of silent dashes."""
+    import pytest
+
+    from kitecast.kite import KiteError
+
+    class R:
+        status_code = 403
+
+        def json(self):
+            return {"status": "error", "message": "Incorrect `api_key` or `access_token`.",
+                    "error_type": "TokenException"}
+
+    monkeypatch.setattr("kitecast.kite.httpx.get", lambda *a, **k: R())
+    kite = KiteClient("key", "secret", access_token="stale-token")
+    with pytest.raises(KiteError, match="TokenException"):
+        kite.quote("MCX:X")
+    assert kite.access_token is None
+
+
 def test_best_price_fallback_chain():
     from kitecast.kite import best_price
 

@@ -60,6 +60,7 @@ class InstrumentStore:
                     "exchange": r["exchange"],
                     "tradingsymbol": r["tradingsymbol"],
                     "name": r.get("name") or "",
+                    "last_price": float(r.get("last_price") or 0),  # prev close at dump time
                     "expiry": r.get("expiry") or "",
                     "strike": float(r.get("strike") or 0),
                     "tick_size": float(r.get("tick_size") or 0),

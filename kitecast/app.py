@@ -145,11 +145,14 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return {k: v[1] for k, v in ltp_cache.items() if k in keys}
 
     def enrich(inst: dict, underlying_ltps: dict[str, float]) -> dict:
-        """Add dte and, for options, strike distance from ATM plus moneyness."""
+        """Add dte and, for options, strike distance from ATM plus moneyness.
+        Falls back to the daily dump's previous close when live quotes fail,
+        so ATM context survives an expired session."""
         out = {**inst, "dte": days_to_expiry(inst["expiry"]), "atm_pct": None, "moneyness": None}
         if inst["strike"] and inst["instrument_type"] in ("CE", "PE"):
             fut = store.underlying_future(inst["exchange"], inst["name"])
-            u_ltp = fut and underlying_ltps.get(f"{fut['exchange']}:{fut['tradingsymbol']}")
+            u_ltp = fut and (underlying_ltps.get(f"{fut['exchange']}:{fut['tradingsymbol']}")
+                             or fut.get("last_price"))
             if u_ltp:
                 out["atm_pct"] = round((inst["strike"] - u_ltp) / u_ltp * 100, 1)
                 out["moneyness"] = moneyness(out["atm_pct"], inst["instrument_type"])
@@ -181,7 +184,12 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             raise HTTPException(409, str(e))
         if not (data["futures"] or data["options"] or data["equities"]):
             raise HTTPException(404, "Unknown underlying")
-        data["underlying_ltp"] = next(iter(ltps.values()), None)
+        u_ltp = next(iter(ltps.values()), None)
+        source = "live" if u_ltp else None
+        if not u_ltp and fut and fut.get("last_price"):
+            u_ltp, source = fut["last_price"], "prev close"
+        data["underlying_ltp"] = u_ltp
+        data["underlying_ltp_source"] = source
         return data
 
     @app.get("/api/instruments")

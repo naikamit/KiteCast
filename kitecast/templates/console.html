@@ -127,7 +127,10 @@ async function pickUnderlying(u) {
   search.value = `${u.exchange}:${u.name}`;
   results.hidden = true;
   const r = await fetch(`/api/chain?exchange=${u.exchange}&name=${encodeURIComponent(u.name)}`);
-  if (!r.ok) { cinfo.innerHTML = '<span class="dim">chain unavailable</span>'; cinfo.hidden = false; return; }
+  if (!r.ok) {
+    const d = (await r.json()).detail || 'chain unavailable';
+    cinfo.innerHTML = `<span class="dim">${d}</span>`; cinfo.hidden = false; return;
+  }
   chain = await r.json();
   const t = $('p_type');
   t.innerHTML = '';
@@ -188,6 +191,8 @@ function renderStrikes(showAll) {
   });
   if (u && !showAll && rows.length < total)
     s.add(new Option(`show all ${total} strikes…`, '__all__'));
+  if (u && chain.underlying_ltp_source === 'prev close')
+    document.querySelector('#p_strikewrap label').textContent = 'Strike (vs ATM, prev close)';
   s.selectedIndex = rows.length ? best : -1;
   if (rows.length) chooseSymbol(chain.exchange, s.value);
 }
@@ -205,7 +210,10 @@ async function chooseSymbol(exchange, tradingsymbol) {
   $('f_exchange').value = exchange;
   cinfo.innerHTML = '<span class="dim">loading contract…</span>'; cinfo.hidden = false;
   const r = await fetch(`/api/contract?exchange=${exchange}&tradingsymbol=${encodeURIComponent(tradingsymbol)}`);
-  if (!r.ok) { cinfo.innerHTML = '<span class="dim">contract info unavailable</span>'; return; }
+  if (!r.ok) {
+    const d = (await r.json()).detail || 'contract info unavailable';
+    cinfo.innerHTML = `<span class="dim">${d}</span>`; return;
+  }
   const c = await r.json(), q = c.quote;
   // MCX quantity is in lots; equity/derivative segments take units in lot-size multiples.
   const step = exchange === 'MCX' ? 1 : (c.lot_size || 1);
@@ -245,7 +253,10 @@ function fetchCost() {
     if ($('f_ordertype').value === 'LIMIT' && $('f_price').value) params.set('price', $('f_price').value);
     costEl.innerHTML = '<span class="dim">calculating cost…</span>'; costEl.hidden = false;
     const r = await fetch('/api/cost?' + params);
-    if (!r.ok) { costEl.innerHTML = '<span class="dim">cost unavailable</span>'; return; }
+    if (!r.ok) {
+      const d = (await r.json()).detail || 'cost unavailable';
+      costEl.innerHTML = `<span class="dim">${d}</span>`; return;
+    }
     const c = await r.json();
     const lotWord = c.lots === 1 ? 'lot' : 'lots';
     let rows = `

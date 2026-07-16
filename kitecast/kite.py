@@ -132,13 +132,16 @@ class KiteClient:
         ).hexdigest()
         return payload.get("checksum") == expected
 
-    @staticmethod
-    def _unwrap(resp: httpx.Response) -> dict:
+    def _unwrap(self, resp: httpx.Response) -> dict:
         try:
             body = resp.json()
         except ValueError:
             raise KiteError(f"Kite returned non-JSON (HTTP {resp.status_code})")
         if resp.status_code != 200 or body.get("status") != "success":
+            # A dead daily token: stop pretending we're logged in, so the
+            # console shows the login banner instead of silent dashes.
+            if body.get("error_type") == "TokenException" or resp.status_code == 403:
+                self.access_token = None
             raise KiteError(f"{body.get('message', 'Kite error')} "
                             f"(HTTP {resp.status_code}, {body.get('error_type', 'unknown')})")
         return body["data"]
