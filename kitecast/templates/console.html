@@ -165,25 +165,39 @@ function onExpiry() {
     return;
   }
   $('p_strikewrap').style.display = '';
+  renderStrikes(false);
+}
+
+function renderStrikes(showAll) {
+  const type = $('p_type').value, expiry = $('p_expiry').value;
   const s = $('p_strike');
   s.innerHTML = '';
-  const rows = chain.options.filter(o => o.type === type && o.expiry === expiry)
+  let rows = chain.options.filter(o => o.type === type && o.expiry === expiry)
     .sort((a, b) => a.strike - b.strike);
   const u = chain.underlying_ltp;
+  // The full board is huge (deep wings nobody trades) — default to ±10% of ATM.
+  const total = rows.length;
+  if (u && !showAll) rows = rows.filter(o => Math.abs(o.strike - u) / u <= 0.10);
+  if (!rows.length) { rows = chain.options.filter(o => o.type === type && o.expiry === expiry)
+    .sort((a, b) => a.strike - b.strike); showAll = true; }
   let best = 0, bestDiff = Infinity;
   rows.forEach((o, i) => {
     const pct = u ? (o.strike - u) / u * 100 : null;
-    const lbl = fmt(o.strike) + mny(pct, type);
-    s.add(new Option(lbl, o.tradingsymbol));
+    s.add(new Option(fmt(o.strike) + mny(pct, type), o.tradingsymbol));
     if (u && Math.abs(o.strike - u) < bestDiff) { bestDiff = Math.abs(o.strike - u); best = i; }
   });
+  if (u && !showAll && rows.length < total)
+    s.add(new Option(`show all ${total} strikes…`, '__all__'));
   s.selectedIndex = rows.length ? best : -1;
   if (rows.length) chooseSymbol(chain.exchange, s.value);
 }
 
 $('p_type').addEventListener('change', onType);
 $('p_expiry').addEventListener('change', onExpiry);
-$('p_strike').addEventListener('change', () => chooseSymbol(chain.exchange, $('p_strike').value));
+$('p_strike').addEventListener('change', () => {
+  if ($('p_strike').value === '__all__') { renderStrikes(true); return; }
+  chooseSymbol(chain.exchange, $('p_strike').value);
+});
 
 async function chooseSymbol(exchange, tradingsymbol) {
   selected = {exchange, tradingsymbol};
