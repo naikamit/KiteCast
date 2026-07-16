@@ -187,6 +187,20 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         data["underlying_ltp_source"] = source
         return data
 
+    @app.get("/api/strike_quotes")
+    def strike_quotes_api(i: str):
+        """Batch premium + OI for the strike dropdown — one full-quote call
+        prices the whole visible window (Kite allows ~500 keys per call)."""
+        keys = [k.strip() for k in i.split(",") if k.strip()][:60]
+        if not keys:
+            raise HTTPException(400, "No instruments")
+        try:
+            data = kite.quote(*keys)
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+        return {k: {"ltp": (v or {}).get("last_price"), "oi": (v or {}).get("oi")}
+                for k, v in data.items()}
+
     @app.get("/api/instruments")
     def search_instruments(q: str = ""):
         try:

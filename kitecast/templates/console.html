@@ -45,6 +45,8 @@
       <div><label>Type</label><select id="p_type"></select></div>
       <div id="p_expirywrap"><label>Expiry (DTE)</label><select id="p_expiry"></select></div>
       <div id="p_strikewrap"><label>Strike (vs ATM)</label><select id="p_strike"></select></div>
+      <div id="p_spotwrap"><label>Spot <span id="spotsrc" class="dim"></span></label>
+        <input id="p_spot" type="number" step="any" placeholder="ATM reference"></div>
       <div><label>Buy / Sell</label>
         <select name="side" id="p_side"><option>BUY</option><option>SELL</option></select></div>
     </div>
@@ -132,6 +134,9 @@ async function pickUnderlying(u) {
     cinfo.innerHTML = `<span class="dim">${d}</span>`; cinfo.hidden = false; return;
   }
   chain = await r.json();
+  $('p_spot').value = chain.underlying_ltp ?? '';
+  $('spotsrc').textContent = !chain.underlying_ltp ? '(enter manually)'
+    : chain.underlying_ltp_source === 'live' ? '(live)' : '(prev close — edit if off)';
   const t = $('p_type');
   t.innerHTML = '';
   if (chain.futures.length) t.add(new Option('Future', 'FUT'));
@@ -191,11 +196,44 @@ function renderStrikes(showAll) {
   });
   if (u && !showAll && rows.length < total)
     s.add(new Option(`show all ${total} strikes…`, '__all__'));
-  if (u && chain.underlying_ltp_source === 'prev close')
-    document.querySelector('#p_strikewrap label').textContent = 'Strike (vs ATM, prev close)';
+  const srcNote = chain.underlying_ltp_source && chain.underlying_ltp_source !== 'live'
+    ? `, ${chain.underlying_ltp_source}` : '';
+  document.querySelector('#p_strikewrap label').textContent = `Strike (vs ATM${srcNote})`;
   s.selectedIndex = rows.length ? best : -1;
+  decoratePremiums(rows);
   if (rows.length) chooseSymbol(chain.exchange, s.value);
 }
+
+async function decoratePremiums(rows) {
+  // One batch full-quote call decorates every visible strike with its live
+  // premium and open interest.
+  if (!rows.length) return;
+  const keys = rows.map(o => `${chain.exchange}:${o.tradingsymbol}`);
+  const r = await fetch('/api/strike_quotes?i=' + encodeURIComponent(keys.join(',')));
+  if (!r.ok) return;  // dead session: labels stay price-less
+  const quotes = await r.json();
+  const compact = new Intl.NumberFormat('en-IN', {notation: 'compact', maximumFractionDigits: 1});
+  [...$('p_strike').options].forEach(opt => {
+    const q = quotes[`${chain.exchange}:${opt.value}`];
+    if (!q) return;
+    if (q.ltp) opt.text += ` · ₹${Number(q.ltp).toLocaleString('en-IN')}`;
+    if (q.oi) opt.text += ` · OI ${compact.format(q.oi)}`;
+  });
+}
+
+let spotTimer = null;
+$('p_spot').addEventListener('input', () => {
+  clearTimeout(spotTimer);
+  spotTimer = setTimeout(() => {
+    if (!chain) return;
+    const v = parseFloat($('p_spot').value);
+    chain.underlying_ltp = (isFinite(v) && v > 0) ? v : null;
+    chain.underlying_ltp_source = 'manual';
+    $('spotsrc').textContent = '(manual)';
+    const type = $('p_type').value;
+    if (type === 'CE' || type === 'PE') renderStrikes(false);
+  }, 500);
+});
 
 $('p_type').addEventListener('change', onType);
 $('p_expiry').addEventListener('change', onExpiry);

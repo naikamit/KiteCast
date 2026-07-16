@@ -220,6 +220,19 @@ def test_public_link_works_with_no_friends_configured(client, ledger, kite, tele
     assert "(2✓)" in client.get("/").text
 
 
+def test_strike_quotes_api(client, kite):
+    """Batch premium + OI per strike for the dropdown decoration."""
+    r = client.get("/api/strike_quotes?i=MCX:CRUDEOIL26JUL5500CE,MCX:GOLD25AUGFUT")
+    assert r.status_code == 200
+    q = r.json()["MCX:CRUDEOIL26JUL5500CE"]
+    assert q["ltp"] == 6250.0
+    assert q["oi"] == 6789
+
+    assert client.get("/api/strike_quotes?i=").status_code == 400
+    kite.access_token = None
+    assert client.get("/api/strike_quotes?i=MCX:X").status_code == 409
+
+
 def test_order_cost_api(client):
     r = client.get("/api/cost?exchange=MCX&tradingsymbol=CRUDEOIL25JULFUT&side=BUY&qty=3")
     assert r.status_code == 200
