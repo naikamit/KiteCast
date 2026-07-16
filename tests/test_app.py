@@ -234,6 +234,30 @@ def test_placed_trades_also_get_public_links(client, ledger, kite, friends):
     assert client.get(f"/t/{trade['public_entry_token']}").status_code == 200
 
 
+def test_unpriceable_option_mirror_blocks_and_alerts(client, ledger, kite, telegram, monkeypatch):
+    """The screenshot bug: a share-only MCX option with no session and no fill
+    price must NOT render a bare MARKET basket (exchange rejects it) — the
+    friend gets a try-again page and the owner gets a Telegram alert."""
+    monkeypatch.setattr(app_settings, "owner_telegram_chat_id", "999")
+    client.post("/trade", data={
+        "tradingsymbol": "CRUDEOIL26JUL5500CE", "exchange": "MCX", "side": "BUY",
+        "qty": "1", "product": "NRML", "order_type": "MARKET", "mode": "share_url",
+    }, follow_redirects=False)
+    trade = ledger.trades()[0]
+
+    kite.access_token = None  # daily login lapsed before the friend taps
+    r = client.get(f"/t/{trade['public_entry_token']}")
+    assert r.status_code == 200
+    assert "connect/basket" not in r.text          # no doomed MARKET basket
+    assert "Can't build this order right now" in r.text
+    assert any(m[0] == "999" and "Kite login" in m[1] for m in telegram.sent)
+
+    # Session restored: same link now renders the protected-LIMIT basket.
+    kite.access_token = "tok"
+    r = client.get(f"/t/{trade['public_entry_token']}")
+    assert "connect/basket" in r.text and "LIMIT" in r.text
+
+
 def test_mirror_unknown_token_404(client):
     assert client.get("/m/nope").status_code == 404
     assert client.get("/t/nope").status_code == 404

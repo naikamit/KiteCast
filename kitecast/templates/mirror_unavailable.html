@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.ico">
+<title>Try again shortly</title>
+<style>
+  body { margin:0; background:#0e1116; color:#e6e9ee; display:flex; min-height:100vh;
+         align-items:center; justify-content:center;
+         font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .card { background:#171c24; border:1px solid #2a3240; border-radius:12px;
+          padding:1.6rem; max-width:22rem; text-align:center; }
+  .bad { color:#e8a530; font-size:1.2rem; font-weight:700; }
+  .dim { color:#8b95a5; font-size:.85rem; }
+  button { margin-top:1rem; width:100%; padding:.8rem; border:0; border-radius:8px;
+           background:#4c8dff; color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="bad">Can't build this order right now</div>
+  <p class="dim">The exchange requires a price-protected order for commodity options, and a live
+    price isn't available at the moment. Amit has been pinged — reopen this link in a few minutes.</p>
+  <button onclick="location.reload()">Try again</button>
+</div>
+</body>
+</html>

@@ -336,7 +336,12 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         if share is None:
             raise HTTPException(404, "Unknown or expired mirror link")
         trade = ledger.trade(share["trade_id"])
-        order = service.build_mirror_order(share, trade)
+        try:
+            order = service.build_mirror_order(share, trade)
+        except KiteError as e:
+            service.alert_owner(f"Friend mirror for {trade['tradingsymbol']} couldn't be priced "
+                                f"— check the daily Kite login. ({e})")
+            return templates.TemplateResponse(request, "mirror_unavailable.html", {})
         return templates.TemplateResponse(request, "mirror.html", {
             "leg": share["leg"], "order": order,
             "price": service.price_context(trade, order),
@@ -354,7 +359,12 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         if found is None:
             raise HTTPException(404, "Unknown or expired mirror link")
         trade, leg = found
-        order = service.build_public_order(trade, leg)
+        try:
+            order = service.build_public_order(trade, leg)
+        except KiteError as e:
+            service.alert_owner(f"Public mirror for {trade['tradingsymbol']} couldn't be priced "
+                                f"— check the daily Kite login. ({e})")
+            return templates.TemplateResponse(request, "mirror_unavailable.html", {})
         return templates.TemplateResponse(request, "mirror.html", {
             "leg": leg, "order": order,
             "price": service.price_context(trade, order),

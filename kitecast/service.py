@@ -239,7 +239,9 @@ class TradeShareService:
 
     def _tap_time_order(self, trade, leg: str, qty: int) -> dict:
         """Built at tap time: MARKET intent on a commodity option becomes a
-        protected LIMIT anchored to live LTP (fallback: my entry fill)."""
+        protected LIMIT anchored to live LTP (fallback: my entry fill).
+        strict — an unpriceable MCX-option MARKET raises instead of handing
+        the friend a basket the exchange is guaranteed to reject."""
         order = (basket.entry_order(trade, qty) if leg == "ENTRY"
                  else basket.exit_order(trade, qty))
         eff_type, eff_price = self._market_protected(
@@ -248,11 +250,28 @@ class TradeShareService:
             price=order.get("price"), ref_fallback=trade["entry_fill_price"],
             pct=(self.settings.market_protection_pct_entry if leg == "ENTRY"
                  else self.settings.market_protection_pct_exit),
+            strict=True,
         )
         if eff_type == "LIMIT" and order["order_type"] == "MARKET":
             order["order_type"] = "LIMIT"
             order["price"] = eff_price
         return order
+
+    _last_owner_alert: float | None = None
+
+    def alert_owner(self, text: str) -> None:
+        """Ops alert to MY phone (throttled to one per 10 min) — e.g. mirrors
+        failing to price because the daily Kite login lapsed."""
+        import time as _time
+
+        if not self.settings.owner_telegram_chat_id:
+            return
+        now = _time.monotonic()
+        if self._last_owner_alert is not None and now - self._last_owner_alert < 600:
+            return
+        self._last_owner_alert = now
+        self.telegram.send(self.settings.owner_telegram_chat_id,
+                           f"⚠️ {text}", "Open console", self.settings.base_url)
 
     # ---- friend confirmations ----
 

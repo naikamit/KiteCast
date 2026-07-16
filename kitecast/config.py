@@ -14,6 +14,9 @@ class Settings:
     kite_api_secret: str = field(default_factory=lambda: _env("KITE_API_SECRET"))
     base_url: str = field(default_factory=lambda: _env("BASE_URL", "http://localhost:8000").rstrip("/"))
     telegram_bot_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN"))
+    # My own chat with the bot — gets ops alerts (e.g. a friend's mirror
+    # couldn't be priced because the daily Kite session lapsed).
+    owner_telegram_chat_id: str = field(default_factory=lambda: _env("OWNER_TELEGRAM_CHAT_ID"))
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "kitecast.db"))
     # Open decision 10 — share timing: "fill" (default) or "placement".
     share_timing_entry: str = field(default_factory=lambda: _env("SHARE_TIMING_ENTRY", "fill"))
