@@ -187,6 +187,32 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         data["underlying_ltp_source"] = source
         return data
 
+    @app.get("/api/atm")
+    def atm_by_oi(exchange: str, name: str, expiry: str):
+        """ATM as the mode of the OI distribution: quote every strike of the
+        expiry (CE+PE, chunked batch calls) and return the strike carrying
+        the most open interest."""
+        try:
+            rows = [o for o in store.chain(exchange, name)["options"] if o["expiry"] == expiry]
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+        if not rows:
+            raise HTTPException(404, "No options for that expiry")
+        oi_by_strike: dict[float, int] = {}
+        try:
+            for start in range(0, len(rows), 400):
+                chunk = rows[start:start + 400]
+                data = kite.quote(*(f"{exchange}:{o['tradingsymbol']}" for o in chunk))
+                for o in chunk:
+                    oi = (data.get(f"{exchange}:{o['tradingsymbol']}") or {}).get("oi") or 0
+                    oi_by_strike[o["strike"]] = oi_by_strike.get(o["strike"], 0) + oi
+        except KiteError as e:
+            raise HTTPException(409, str(e))
+        if not any(oi_by_strike.values()):
+            raise HTTPException(404, "No open interest data")
+        atm = max(oi_by_strike, key=oi_by_strike.get)
+        return {"atm_strike": atm, "oi_at_atm": oi_by_strike[atm]}
+
     @app.get("/api/strike_quotes")
     def strike_quotes_api(i: str):
         """Batch premium + OI for the strike dropdown — one full-quote call

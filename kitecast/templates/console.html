@@ -134,9 +134,8 @@ async function pickUnderlying(u) {
     cinfo.innerHTML = `<span class="dim">${d}</span>`; cinfo.hidden = false; return;
   }
   chain = await r.json();
-  $('p_spot').value = chain.underlying_ltp ?? '';
-  $('spotsrc').textContent = !chain.underlying_ltp ? '(enter manually)'
-    : chain.underlying_ltp_source === 'live' ? '(live)' : '(prev close — edit if off)';
+  chain.spot_override = null; chain.oi_atm = null;
+  updateSpotField();
   const t = $('p_type');
   t.innerHTML = '';
   if (chain.futures.length) t.add(new Option('Future', 'FUT'));
@@ -163,7 +162,7 @@ function onType() {
   onExpiry();
 }
 
-function onExpiry() {
+async function onExpiry() {
   if (!chain) return;
   const type = $('p_type').value, expiry = $('p_expiry').value;
   if (type === 'FUT') {
@@ -173,7 +172,31 @@ function onExpiry() {
     return;
   }
   $('p_strikewrap').style.display = '';
+  // ATM = mode of the OI distribution for this expiry (falls back to the
+  // underlying price when OI isn't available).
+  chain.oi_atm = null;
+  try {
+    const r = await fetch(`/api/atm?exchange=${chain.exchange}&name=${encodeURIComponent(chain.name)}&expiry=${expiry}`);
+    if (r.ok) chain.oi_atm = (await r.json()).atm_strike;
+  } catch (e) {}
+  updateSpotField();
   renderStrikes(false);
+}
+
+function refSpot() {
+  if (chain.spot_override) return {u: chain.spot_override, src: 'manual'};
+  if (chain.oi_atm) return {u: chain.oi_atm, src: 'OI mode'};
+  return {u: chain.underlying_ltp, src: chain.underlying_ltp_source};
+}
+
+function updateSpotField() {
+  const {u, src} = refSpot();
+  $('p_spot').value = u ?? '';
+  $('spotsrc').textContent = !u ? '(enter manually)'
+    : src === 'live' ? '(live)'
+    : src === 'OI mode' ? '(OI mode)'
+    : src === 'manual' ? '(manual)'
+    : '(prev close — edit if off)';
 }
 
 function renderStrikes(showAll) {
@@ -182,10 +205,10 @@ function renderStrikes(showAll) {
   s.innerHTML = '';
   let rows = chain.options.filter(o => o.type === type && o.expiry === expiry)
     .sort((a, b) => a.strike - b.strike);
-  const u = chain.underlying_ltp;
-  // The full board is huge (deep wings nobody trades) — default to ±10% of ATM.
+  const {u, src} = refSpot();
+  // The full board is huge (deep wings nobody trades) — default to ±20% of ATM.
   const total = rows.length;
-  if (u && !showAll) rows = rows.filter(o => Math.abs(o.strike - u) / u <= 0.10);
+  if (u && !showAll) rows = rows.filter(o => Math.abs(o.strike - u) / u <= 0.20);
   if (!rows.length) { rows = chain.options.filter(o => o.type === type && o.expiry === expiry)
     .sort((a, b) => a.strike - b.strike); showAll = true; }
   let best = 0, bestDiff = Infinity;
@@ -196,8 +219,7 @@ function renderStrikes(showAll) {
   });
   if (u && !showAll && rows.length < total)
     s.add(new Option(`show all ${total} strikes…`, '__all__'));
-  const srcNote = chain.underlying_ltp_source && chain.underlying_ltp_source !== 'live'
-    ? `, ${chain.underlying_ltp_source}` : '';
+  const srcNote = src && src !== 'live' ? `, ${src}` : '';
   document.querySelector('#p_strikewrap label').textContent = `Strike (vs ATM${srcNote})`;
   s.selectedIndex = rows.length ? best : -1;
   decoratePremiums(rows);
@@ -227,9 +249,8 @@ $('p_spot').addEventListener('input', () => {
   spotTimer = setTimeout(() => {
     if (!chain) return;
     const v = parseFloat($('p_spot').value);
-    chain.underlying_ltp = (isFinite(v) && v > 0) ? v : null;
-    chain.underlying_ltp_source = 'manual';
-    $('spotsrc').textContent = '(manual)';
+    chain.spot_override = (isFinite(v) && v > 0) ? v : null;
+    $('spotsrc').textContent = chain.spot_override ? '(manual)' : '(enter manually)';
     const type = $('p_type').value;
     if (type === 'CE' || type === 'PE') renderStrikes(false);
   }, 500);

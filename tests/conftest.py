@@ -15,6 +15,7 @@ instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick
 5,5,RELIANCE,RELIANCE INDUSTRIES,0,,0,0.05,1,EQ,NSE,NSE
 6,6,GIFTNIFTY,GIFT NIFTY,0,2026-07-30,0,0.5,50,FUT,IFSC-FUT,NSEIX
 7,7,CRUDEOIL26JUL5500CE,CRUDEOIL,0,2026-07-15,5500,0.1,100,CE,MCX-OPT,MCX
+8,8,CRUDEOIL26JUL6000PE,CRUDEOIL,0,2026-07-15,6000,0.1,100,PE,MCX-OPT,MCX
 """
 
 SAMPLE_QUOTE = {
@@ -49,10 +50,11 @@ class FakeKite(KiteClient):
         self.orders: list[dict] = []
         self._next_id = 100
         self.quote_data = dict(SAMPLE_QUOTE)
+        self.quote_overrides: dict[str, dict] = {}
 
     def quote(self, *keys):
         self._auth_headers()
-        return {k: dict(self.quote_data) for k in keys}
+        return {k: {**self.quote_data, **self.quote_overrides.get(k, {})} for k in keys}
 
     def order_margins(self, order):
         self._auth_headers()

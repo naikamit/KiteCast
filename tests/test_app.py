@@ -44,7 +44,7 @@ def test_underlying_search_and_chain(client):
     dropdowns so one front-series expiry can't flood the results."""
     hits = client.get("/api/underlyings?q=crude").json()
     assert hits == [{"name": "CRUDEOIL", "exchange": "MCX",
-                     "futures": 2, "options": 1, "equity": 0}]
+                     "futures": 2, "options": 2, "equity": 0}]
 
     chain = client.get("/api/chain?exchange=MCX&name=CRUDEOIL").json()
     assert [f["tradingsymbol"] for f in chain["futures"]] == [
@@ -218,6 +218,20 @@ def test_public_link_works_with_no_friends_configured(client, ledger, kite, tele
     assert trade["public_entry_confirms"] == 2
     assert trade["public_exit_confirms"] == 0
     assert "(2✓)" in client.get("/").text
+
+
+def test_atm_from_oi_mode(client, kite):
+    """ATM = the strike carrying the most OI across CE+PE for the expiry."""
+    kite.quote_overrides["MCX:CRUDEOIL26JUL6000PE"] = {"oi": 99999}
+    r = client.get("/api/atm?exchange=MCX&name=CRUDEOIL&expiry=2026-07-15")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["atm_strike"] == 6000.0     # PE's 99999 beats CE's 6789
+    assert body["oi_at_atm"] == 99999
+
+    assert client.get("/api/atm?exchange=MCX&name=CRUDEOIL&expiry=2099-01-01").status_code == 404
+    kite.access_token = None
+    assert client.get("/api/atm?exchange=MCX&name=CRUDEOIL&expiry=2026-07-15").status_code == 409
 
 
 def test_strike_quotes_api(client, kite):
