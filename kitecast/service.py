@@ -283,20 +283,21 @@ class TradeShareService:
             log.info("share confirmed trade=%s friend=%s leg=%s", share["trade_id"], share["friend_id"], share["leg"])
         return ok
 
-    def nudge(self, share_id: int) -> bool:
-        """Re-ping a straggler. The board escalates to 'call' after re-pings."""
-        share = self.ledger.share(share_id)
-        if share is None or share["status"] == "CONFIRMED":
-            return False
-        trade = self.ledger.trade(share["trade_id"])
-        friend = self.ledger.friend(share["friend_id"])
-        nudge_side = trade["side"] if share["leg"] == "ENTRY" else ("SELL" if trade["side"] == "BUY" else "BUY")
-        ltp = best_price(self._quote(trade["exchange"], trade["tradingsymbol"]), nudge_side)
-        sent = self.telegram.send(*self._message(trade, friend, share, nudge=True, ltp=ltp))
-        self.ledger.record_nudge(share_id)
-        if share["status"] == "PREBUILT":
-            self.ledger.mark_share_sent(share_id)
-        return sent
+    def check_login_and_remind(self) -> None:
+        """Morning ops check: probe the session; if it's missing or dead,
+        ping my phone with a login button. Bypasses the alert throttle —
+        this runs once a day by schedule."""
+        if self.kite.access_token:
+            try:
+                self.kite.profile()
+                return  # session alive, nothing to do
+            except Exception as e:
+                log.warning("session probe failed: %s", e)
+        if not self.kite.access_token:
+            self.telegram.send(
+                self.settings.owner_telegram_chat_id,
+                "🔑 Daily Kite login needed — mirrors and orders are dark until you tap.",
+                "Log in to Kite", f"{self.settings.base_url}/auth/login")
 
     # ---- internals ----
 
@@ -313,37 +314,10 @@ class TradeShareService:
             self.ledger.create_share(trade_id, friend["id"], "EXIT", qty)
 
     def _push_leg(self, trade_id: int, leg: str) -> None:
-        """Fan the mirror links for one leg to every friend, concurrently."""
+        """Mark one leg's mirror links live. Delivery is manual by design:
+        I copy the links (or use the WA buttons) from the console/board."""
         if not self.ledger.shares_for_trade(trade_id):
             self._build_shares(trade_id)  # placement-timing exits before fill
-        trade = self.ledger.trade(trade_id)
-        shares = [s for s in self.ledger.shares_for_trade(trade_id, leg) if s["status"] != "CONFIRMED"]
-        leg_side = trade["side"] if leg == "ENTRY" else ("SELL" if trade["side"] == "BUY" else "BUY")
-        ltp = best_price(self._quote(trade["exchange"], trade["tradingsymbol"]), leg_side) if shares else None
-        pushable, messages = [], []
-        for share in shares:
-            friend = self.ledger.friend(share["friend_id"])
-            if friend["telegram_chat_id"]:
-                pushable.append(share)
-                messages.append(self._message(trade, friend, share, ltp=ltp))
-            # No chat id: manual-share friend — link is copyable on the board.
-            self.ledger.mark_share_sent(share["id"])
-        for share, sent in zip(pushable, self.telegram.fan_out(messages)):
-            if not sent:
-                log.warning("telegram push failed share=%s", share["id"])
-
-    def _message(self, trade, friend, share, nudge: bool = False,
-                 ltp: float | None = None) -> tuple[str, str, str, str]:
-        url = basket.mirror_url(self.settings.base_url, share["token"])
-        if share["leg"] == "ENTRY":
-            action = f"{trade['side']} {share['qty']} × {trade['tradingsymbol']}"
-            button = "Mirror this trade"
-        else:
-            side = "SELL" if trade["side"] == "BUY" else "BUY"
-            action = f"CLOSE ({side}) {share['qty']} × {trade['tradingsymbol']}"
-            button = "Close now"
-        prefix = "⏰ Reminder — still pending:\n" if nudge else ""
-        price_bit = f"LTP ₹{ltp:,.2f} · " if ltp else ""
-        text = (f"{prefix}<b>{action}</b>\n{price_bit}{trade['exchange']} · {trade['product']}"
-                " · one tap to confirm in your Kite.")
-        return (friend["telegram_chat_id"], text, button, url)
+        for share in self.ledger.shares_for_trade(trade_id, leg):
+            if share["status"] != "CONFIRMED":
+                self.ledger.mark_share_sent(share["id"])

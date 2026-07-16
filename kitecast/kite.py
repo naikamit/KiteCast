@@ -78,6 +78,12 @@ class KiteClient:
             raise KiteError(f"Instrument dump failed (HTTP {resp.status_code})")
         return resp.text
 
+    def profile(self) -> dict:
+        """Cheapest authenticated call — used to probe whether the daily
+        session is still alive."""
+        resp = httpx.get(f"{API_ROOT}/user/profile", headers=self._auth_headers(), timeout=10.0)
+        return self._unwrap(resp)
+
     def quote(self, *keys: str) -> dict:
         """Full quotes for EXCHANGE:TRADINGSYMBOL keys (price, OI, depth,
         circuits). Routed via the whitelisted-IP proxy like orders — Zerodha

@@ -22,14 +22,10 @@ def test_entry_fill_writes_ledger_and_fans_mirrors(service, kite, telegram, frie
     assert trade["status"] == "FILLED"
     assert trade["entry_fill_price"] == 6250.0
 
-    # Fan-out to the 3 active friends only, per-friend scaled, with the
-    # live price in the push text.
+    # Mirror links go live for the 3 active friends only, per-friend scaled.
     entry_shares = ledger.shares_for_trade(trade_id, "ENTRY")
     assert [s["qty"] for s in entry_shares] == [100, 50, 200]
     assert all(s["status"] == "SENT" for s in entry_shares)
-    assert len(telegram.sent) == 3
-    assert all("/m/" in msg[3] for msg in telegram.sent)
-    assert all("LTP ₹6,250.00" in msg[1] for msg in telegram.sent)
 
     # Acceptance: exit links auto-built at entry, held for Close & Share (NFR-1).
     exit_shares = ledger.shares_for_trade(trade_id, "EXIT")
@@ -37,21 +33,22 @@ def test_entry_fill_writes_ledger_and_fans_mirrors(service, kite, telegram, frie
     assert all(s["status"] == "PREBUILT" for s in exit_shares)
 
 
-def test_no_push_before_my_fill_by_default(service, kite, telegram, friends):
-    service.place_and_share(
+def test_no_shares_before_my_fill_by_default(service, kite, telegram, friends, ledger):
+    trade_id = service.place_and_share(
         tradingsymbol="CRUDEOIL25JULFUT", exchange="MCX", side="BUY",
         qty=100, product="NRML", order_type="MARKET", price=None,
     )
-    assert telegram.sent == []  # share timing defaults to on-my-fill
+    assert ledger.shares_for_trade(trade_id) == []  # timing defaults to on-my-fill
 
 
-def test_placement_timing_fans_immediately(service, kite, telegram, friends, settings):
+def test_placement_timing_builds_links_immediately(service, kite, telegram, friends, settings, ledger):
     settings.share_timing_entry = "placement"
-    service.place_and_share(
+    trade_id = service.place_and_share(
         tradingsymbol="CRUDEOIL25JULFUT", exchange="MCX", side="BUY",
         qty=100, product="NRML", order_type="MARKET", price=None,
     )
-    assert len(telegram.sent) == 3
+    entry_shares = ledger.shares_for_trade(trade_id, "ENTRY")
+    assert len(entry_shares) == 3 and all(s["status"] == "SENT" for s in entry_shares)
 
 
 def test_friend_confirmation_flips_green(service, kite, telegram, friends, ledger):
@@ -65,9 +62,8 @@ def test_friend_confirmation_flips_green(service, kite, telegram, friends, ledge
     assert service.confirm_share("bogus-token") is False
 
 
-def test_close_and_share_pushes_matching_close(service, kite, telegram, friends, ledger):
+def test_close_and_share_activates_matching_close_links(service, kite, telegram, friends, ledger):
     trade_id = place_and_fill(service, kite)
-    telegram.sent.clear()
 
     exit_order_id = service.close_and_share(trade_id)
     trade = ledger.trade(trade_id)
@@ -80,14 +76,12 @@ def test_close_and_share_pushes_matching_close(service, kite, telegram, friends,
     assert close["order_type"] == "MARKET"
     assert close["autoslice"] is True
 
-    # Default timing: exit mirrors fan on MY fill.
-    assert telegram.sent == []
+    # Default timing: exit links go live on MY fill.
+    assert all(s["status"] == "PREBUILT" for s in ledger.shares_for_trade(trade_id, "EXIT"))
     assert service.handle_postback(postback(kite, exit_order_id, avg_price=6900.0))
     trade = ledger.trade(trade_id)
     assert trade["status"] == "CLOSED"
     assert trade["exit_fill_price"] == 6900.0
-    assert len(telegram.sent) == 3
-    assert all("Close now" in msg[2] for msg in telegram.sent)
     exit_shares = ledger.shares_for_trade(trade_id, "EXIT")
     assert all(s["status"] == "SENT" for s in exit_shares)
 
@@ -128,35 +122,6 @@ def test_rejected_entry_marks_failed_and_shares_nothing(service, kite, telegram,
     assert ledger.trade(trade_id)["status"] == "FAILED"
     assert telegram.sent == []
     assert ledger.shares_for_trade(trade_id) == []
-
-
-def test_nudge_repings_straggler(service, kite, telegram, friends, ledger):
-    trade_id = place_and_fill(service, kite)
-    share = ledger.shares_for_trade(trade_id, "ENTRY")[0]
-    telegram.sent.clear()
-
-    assert service.nudge(share["id"]) is True
-    assert len(telegram.sent) == 1
-    assert "Reminder" in telegram.sent[0][1]
-    assert ledger.share(share["id"])["nudge_count"] == 1
-
-    # Confirmed friends can't be nudged.
-    service.confirm_share(share["token"])
-    assert service.nudge(share["id"]) is False
-
-
-def test_manual_share_friend_gets_link_not_push(service, kite, telegram, ledger):
-    """A friend without a Telegram chat id is manual-share: their mirror link
-    is created and copyable from the board, but no push goes out."""
-    ledger.add_friend("Ravi", "1001")
-    ledger.add_friend("NoTelegram", "")
-    trade_id = place_and_fill(service, kite)
-
-    shares = ledger.shares_for_trade(trade_id, "ENTRY")
-    assert len(shares) == 2
-    assert all(s["status"] == "SENT" for s in shares)
-    assert len(telegram.sent) == 1          # only Ravi got a push
-    assert telegram.sent[0][0] == "1001"
 
 
 def test_commodity_option_market_order_becomes_protected_limit(service, kite, telegram, friends, ledger):
@@ -264,20 +229,17 @@ def test_share_only_fans_without_placing_my_order(service, kite, telegram, frien
     assert trade["status"] == "SHARED"
     assert trade["entry_order_id"] is None
 
-    # Mirrors pushed immediately (no fill to wait for), exits pre-built.
+    # Links live immediately (no fill to wait for), exits pre-built.
     entry_shares = ledger.shares_for_trade(trade_id, "ENTRY")
     assert [s["qty"] for s in entry_shares] == [100, 50, 200]
     assert all(s["status"] == "SENT" for s in entry_shares)
-    assert len(telegram.sent) == 3
     assert all(s["status"] == "PREBUILT" for s in ledger.shares_for_trade(trade_id, "EXIT"))
 
-    # Share close: pushes exit mirrors, still no order on my account.
-    telegram.sent.clear()
+    # Share close: activates exit links, still no order on my account.
     service.share_only_close(trade_id)
     assert kite.orders == []
     assert ledger.trade(trade_id)["status"] == "CLOSED"
-    assert len(telegram.sent) == 3
-    assert all("Close now" in msg[2] for msg in telegram.sent)
+    assert all(s["status"] == "SENT" for s in ledger.shares_for_trade(trade_id, "EXIT"))
 
     # Can't share-close twice, and Close & Share rejects share-only trades.
     try:
@@ -299,9 +261,38 @@ def test_close_and_share_rejects_share_only_trade(service, kite, friends):
         pass
 
 
+def test_login_reminder_pings_only_when_session_dead(service, kite, telegram, settings):
+    settings.owner_telegram_chat_id = "999"
+
+    # No token at all -> remind.
+    kite.access_token = None
+    service.check_login_and_remind()
+    assert len(telegram.sent) == 1
+    assert "login" in telegram.sent[0][1].lower()
+    assert telegram.sent[0][3].endswith("/auth/login")
+
+    # Live session (FakeKite.profile inherits real impl? patch via quote-less
+    # probe): give the fake a working profile and expect silence.
+    telegram.sent.clear()
+    kite.access_token = "tok"
+    kite.profile = lambda: {"user_id": "AB1234"}
+    service.check_login_and_remind()
+    assert telegram.sent == []
+
+    # Token present but Kite rejects it -> profile clears token -> remind.
+    def dead_profile():
+        kite.access_token = None
+        raise Exception("TokenException")
+
+    kite.access_token = "stale"
+    kite.profile = dead_profile
+    service.check_login_and_remind()
+    assert len(telegram.sent) == 1
+
+
 def test_duplicate_fill_postback_does_not_refan(service, kite, telegram, friends, ledger):
     trade_id = place_and_fill(service, kite)
     trade = ledger.trade(trade_id)
-    assert len(telegram.sent) == 3
+    before = [tuple(s) for s in ledger.shares_for_trade(trade_id)]
     service.handle_postback(postback(kite, trade["entry_order_id"], filled_qty=100))
-    assert len(telegram.sent) == 3  # no double fan-out
+    assert [tuple(s) for s in ledger.shares_for_trade(trade_id)] == before  # no duplicates/refan

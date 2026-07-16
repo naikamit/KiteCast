@@ -17,6 +17,8 @@ class Settings:
     # My own chat with the bot — gets ops alerts (e.g. a friend's mirror
     # couldn't be priced because the daily Kite session lapsed).
     owner_telegram_chat_id: str = field(default_factory=lambda: _env("OWNER_TELEGRAM_CHAT_ID"))
+    # IST time (HH:MM) for the weekday morning login reminder; empty disables.
+    login_reminder_time: str = field(default_factory=lambda: _env("LOGIN_REMINDER_TIME", "08:45"))
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "kitecast.db"))
     # Open decision 10 — share timing: "fill" (default) or "placement".
     share_timing_entry: str = field(default_factory=lambda: _env("SHARE_TIMING_ENTRY", "fill"))

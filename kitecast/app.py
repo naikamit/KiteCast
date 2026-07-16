@@ -4,6 +4,7 @@ mirror/redirect routes are token-scoped. The console itself is
 unauthenticated — keep the URL private."""
 
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -103,11 +104,6 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "rows": rows, "friends": friends, "base_url": settings.base_url,
         })
 
-    @app.post("/share/{share_id}/nudge")
-    def nudge(share_id: int):
-        service.nudge(share_id)
-        return RedirectResponse("/board", status_code=303)
-
     # ---- my side: friends admin ----
 
     @app.get("/friends", response_class=HTMLResponse)
@@ -115,9 +111,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return templates.TemplateResponse(request, "friends.html", {"friends": ledger.friends()})
 
     @app.post("/friends")
-    def add_friend(name: str = Form(...),
-                   telegram_chat_id: str = Form(""), multiplier: float = Form(1.0)):
-        ledger.add_friend(name.strip(), telegram_chat_id.strip(), multiplier)
+    def add_friend(name: str = Form(...), multiplier: float = Form(1.0)):
+        ledger.add_friend(name.strip(), "", multiplier)
         return RedirectResponse("/friends", status_code=303)
 
     @app.post("/friends/{friend_id}")
@@ -385,5 +380,35 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     return app
 
 
+def _start_login_reminder(service) -> None:
+    """Weekday-morning ops thread: at LOGIN_REMINDER_TIME (IST), probe the
+    Kite session and ping my phone if the daily login is still pending."""
+    if not (settings.telegram_bot_token and settings.owner_telegram_chat_id
+            and settings.login_reminder_time):
+        return
+
+    from datetime import datetime
+
+    from .instruments import IST
+
+    def loop():
+        reminded_on = None
+        while True:
+            now = datetime.now(IST)
+            due = (now.strftime("%H:%M") >= settings.login_reminder_time
+                   and now.weekday() < 5 and reminded_on != now.date())
+            if due:
+                reminded_on = now.date()
+                try:
+                    service.check_login_and_remind()
+                except Exception:
+                    logging.getLogger("kitecast").exception("login reminder failed")
+            time.sleep(60)
+
+    threading.Thread(target=loop, daemon=True, name="login-reminder").start()
+
+
 def create_app() -> FastAPI:
-    return build_app()
+    app = build_app()
+    _start_login_reminder(app.state.service)
+    return app

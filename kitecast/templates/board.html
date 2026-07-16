@@ -4,7 +4,7 @@
 
 <div class="card">
   <h1>Per-friend board — who mirrored, who's pending</h1>
-  <p class="dim" style="margin-top:-.5rem">Green = confirmed in their Kite. Amber = sent, not tapped — nudge once, then call. Grey = exit link pre-built, not yet pushed.</p>
+  <p class="dim" style="margin-top:-.5rem">Green = confirmed in their Kite. Amber = link live, not yet confirmed — copy it or WA it to them, then call the stragglers. Grey = exit link pre-built, held for the close.</p>
   <div style="overflow-x:auto">
   <table>
     <tr>
@@ -34,11 +34,6 @@
             <button class="ghost copy" type="button" data-url="{{ url }}">🔗 copy</button>
             <a class="ghost wa" target="_blank"
                href="https://wa.me/?text={{ (action ~ ' — one tap to confirm in your Kite: ' ~ url) | urlencode }}">WA</a>
-            {% if s['status'] == 'SENT' and f['telegram_chat_id'] %}
-            <form method="post" action="/share/{{ s['id'] }}/nudge" style="display:inline">
-              <button class="ghost" type="submit">{% if s['nudge_count'] > 0 %}📞 call ({{ s['nudge_count'] }}){% else %}nudge{% endif %}</button>
-            </form>
-            {% endif %}
           </span>
         {% endif %}
       </td>

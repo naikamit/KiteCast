@@ -1,14 +1,8 @@
-"""Telegram delivery — hard phone push, never email (NFR-1).
-
-Fan-out uses a thread pool so all friends' pushes go out concurrently;
-one slow send must not delay the others during a blow-off top.
-"""
-
-from concurrent.futures import ThreadPoolExecutor
+"""Owner ops channel — a private bot DM to ME only (login reminders,
+mirror-pricing alerts). Friends never get bot messages: their links are
+shared manually via the console's copy / WhatsApp buttons."""
 
 import httpx
-
-_pool = ThreadPoolExecutor(max_workers=8)
 
 
 class TelegramClient:
@@ -16,8 +10,6 @@ class TelegramClient:
         self.bot_token = bot_token
 
     def send(self, chat_id: str, text: str, button_text: str, url: str) -> bool:
-        """Send one push with a single tap-to-mirror button. Friends without a
-        chat id are manual-share (copy link / WhatsApp from the board)."""
         if not self.bot_token or not chat_id:
             return False
         try:
@@ -34,7 +26,3 @@ class TelegramClient:
             return resp.status_code == 200 and resp.json().get("ok", False)
         except httpx.HTTPError:
             return False
-
-    def fan_out(self, messages: list[tuple[str, str, str, str]]) -> list[bool]:
-        """Send (chat_id, text, button_text, url) pushes concurrently."""
-        return list(_pool.map(lambda m: self.send(*m), messages))

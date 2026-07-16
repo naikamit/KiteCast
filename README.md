@@ -15,9 +15,10 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
                      │
                      ├─ writes SQLite ledger (authoritative — I originated it)
                      ├─ pre-builds every friend's EXIT link (NFR-1)
-                     └─ fans per-friend ENTRY mirror links ──▶ Telegram push
-                                                                   │ tap
-                                              friend's own Kite ◀──┘
+                     └─ builds per-friend + public ENTRY mirror links
+                                     │ I copy / WA them to friends' phones
+                                     ▼ tap
+                              friend's own Kite
                                                     │ confirm (their session)
                      board flips green ◀── Publisher redirect
 ```
@@ -44,7 +45,7 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 | Route | Who | What |
 |---|---|---|
 | `/` | me | Ticket with live contract search (Kite instrument master + full quote: LTP, OHLC, bid/ask, OI, circuits, lot/tick/expiry) → **Place & Share** / **Close & Share**, my fill status |
-| `/board` | me | Per-friend board: entry/exit sent · confirmed (green/amber), one-tap nudge → call escalation |
+| `/board` | me | Per-friend board: entry/exit link live · confirmed (green/amber), copy/WA buttons per friend |
 | `/friends` | me | The private circle (4 named friends), per-friend multipliers, on/off |
 | `/m/{token}` | friend | Auto-submitting pre-filled Kite basket — one tap to confirm |
 | `/kite/postback` | Kite | My order fills (checksum-verified) |
@@ -55,8 +56,11 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 1. **Kite Connect app** (developers.kite.trade, ₹500/mo): set the redirect URL
    to `https://YOUR_HOST/kite/redirect` and the postback URL to
    `https://YOUR_HOST/kite/postback`.
-2. **Telegram bot**: create via @BotFather; each friend sends `/start` to the
-   bot once, then store their chat id on `/friends`.
+2. **Telegram bot (owner ops only)**: create via @BotFather, send it `/start`
+   yourself, and set `OWNER_TELEGRAM_CHAT_ID` to your chat id. It DMs *you*
+   the weekday-morning login reminder (`LOGIN_REMINDER_TIME`, IST) and ops
+   alerts. Friends never interact with the bot — delivery to friends is
+   manual by design: copy their link or use the WA buttons.
 3. **VPS** (NFR-2): always-on, **static IP**, **exclude Mullvad** / any VPN
    from this host's egress so postbacks and Publisher redirects always land.
 4. **Static IP whitelist (mandatory for orders):** Zerodha validates *order*
@@ -87,20 +91,16 @@ A systemd unit is provided in `deploy/kitecast.service`. Put TLS in front
 ## Daily flow
 
 1. Console → ticket → **Place & Share**. My order fires; on my fill the ledger
-   is written and each friend gets a Telegram push with a **Mirror this
-   trade** button (their exit link is pre-built at the same moment).
-2. Friend taps → lands on the pre-filled basket in their own Kite → confirms.
-   The redirect flips them **green** on `/board`; stragglers stay **amber**
-   with a nudge button (re-ping first, the button then escalates to *call*).
-   **Alternative to Telegram push:** every pending cell on `/board` also has a
-   **🔗 copy** button (copies the friend's mirror URL —
-   `BASE_URL/m/<token>` — paste it anywhere) and a **WA** button that opens
-   WhatsApp with the message pre-written. Leave a friend's Telegram chat id
-   blank to make them manual-share only. Mirror links are per-friend and
-   per-leg — send each friend *their* link, since it carries their scaled qty
-   and flips *their* cell green.
+   is written, every friend's entry + exit mirror links go live, and the
+   trade row shows 🔗 entry / 🔗 close public links.
+2. I deliver the links myself — **🔗 copy** (clipboard) or **WA** (opens
+   WhatsApp with the message pre-written) from the console or the per-friend
+   board. Friend taps → pre-filled basket in their own Kite → confirms → the
+   redirect flips them **green** on `/board`; stragglers stay **amber** (call
+   them). Per-friend links carry their scaled qty and flip their own cell;
+   the public `/t/` links work for anyone at base qty.
 3. Exit: **Close & Share** on the open trade. My close fires at-any-cost; on
-   my fill every friend gets the matching **Close now** push.
+   my fill the matching close links go live — copy/WA them out.
 
 Share timing is configurable (`SHARE_TIMING_ENTRY/EXIT`): `fill` (default)
 fans mirrors when *my* order fills; `placement` fans the instant I place.
@@ -150,4 +150,4 @@ python -m pytest
 `kitecast/` — `app.py` (routes) · `service.py` (Place/Close & Share
 orchestration) · `db.py` (SQLite ledger) · `kite.py` (Kite Connect REST +
 postback checksum) · `basket.py` (Publisher baskets, scaling) · `telegram.py`
-(concurrent fan-out).
+(owner ops DMs only).

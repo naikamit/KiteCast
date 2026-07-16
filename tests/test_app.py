@@ -131,7 +131,6 @@ def test_full_flow_over_http(client, ledger, kite, telegram, friends):
     r = client.post("/kite/postback", json=postback(kite, trade["entry_order_id"], filled_qty=100))
     assert r.status_code == 200
     assert ledger.trade(trade["id"])["status"] == "FILLED"
-    assert len(telegram.sent) == 3
 
     # Friend opens the mirror link: pre-filled basket form.
     share = ledger.shares_for_trade(trade["id"], "ENTRY")[0]
@@ -160,7 +159,6 @@ def test_full_flow_over_http(client, ledger, kite, telegram, friends):
     exit_order_id = ledger.trade(trade["id"])["exit_order_id"]
     client.post("/kite/postback", json=postback(kite, exit_order_id, avg_price=7000.0))
     assert ledger.trade(trade["id"])["status"] == "CLOSED"
-    assert len(telegram.sent) == 3
 
 
 def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
@@ -172,7 +170,6 @@ def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
     assert kite.orders == []
     trade = ledger.trades()[0]
     assert trade["status"] == "SHARED"
-    assert len(telegram.sent) == 3
 
     # The redirect lands on a links-ready panel with both public URLs.
     assert r.headers["location"] == f"/?shared={trade['id']}"
@@ -183,11 +180,9 @@ def test_share_only_flow_over_http(client, ledger, kite, telegram, friends):
 
     # Console offers "Share close" for it; the route pushes exit mirrors.
     assert "share-close" in client.get("/").text
-    telegram.sent.clear()
     r = client.post(f"/trade/{trade['id']}/share-close", follow_redirects=False)
     assert r.status_code == 303
     assert ledger.trade(trade["id"])["status"] == "CLOSED"
-    assert len(telegram.sent) == 3
     assert kite.orders == []
 
 
@@ -301,8 +296,8 @@ def test_failed_basket_redirect_does_not_confirm(client, ledger, kite, telegram,
 
 def test_friends_admin(client, ledger):
     r = client.post("/friends", data={
-        "name": "Ravi", "telegram_chat_id": "42", "multiplier": "0.5",
+        "name": "Ravi", "multiplier": "0.5",
     }, follow_redirects=False)
     assert r.status_code == 303
     f = ledger.friends()[0]
-    assert (f["name"], f["telegram_chat_id"], f["multiplier"]) == ("Ravi", "42", 0.5)
+    assert (f["name"], f["multiplier"]) == ("Ravi", 0.5)
