@@ -9,7 +9,9 @@
     and this works even without the daily Kite login.</p>
 
   {% if not vision_ready %}
-  <p class="dim">⚠️ <b>ANTHROPIC_API_KEY is not set</b> — add it to the server environment to enable this page.</p>
+  <p class="dim">⚠️ <b>ANTHROPIC_API_KEY is not set</b> — add it to the server environment to enable this page.<br>
+    Current server config: API key <b>{{ '✓ set' if key_set else '✗ missing' }}</b> ·
+    workspace id <b>{{ '✓ set' if ws_set else 'not set (only needed for identity-linked keys)' }}</b></p>
   {% else %}
   <div id="drop" style="border:2px dashed var(--line); border-radius:10px; padding:2rem 1rem;
        text-align:center; cursor:pointer">

@@ -326,6 +326,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     def screenshot_page(request: Request):
         return templates.TemplateResponse(request, "screenshot.html", {
             "vision_ready": vision.configured,
+            "key_set": bool(vision.api_key),
+            "ws_set": bool(vision.workspace_id),
         })
 
     @app.post("/api/screenshot_parse")
