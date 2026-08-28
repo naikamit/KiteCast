@@ -56,8 +56,18 @@ def test_parse_resolves_exact_contract(shot):
     assert body["exchange"] == "MCX"
     assert body["side"] == "BUY"
     assert body["qty"] == 2                # MCX: lots stay lots
-    assert body["price"] == 488.4          # limit price wins over LTP
+    # Screenshot limit price wins over LTP, bumped 10% aggressive (BUY: up),
+    # tick-rounded: 488.4 * 1.10 = 537.24 -> ceil to 0.1 -> 537.3.
+    assert body["screen_price"] == 488.4
+    assert body["price"] == 537.3
     assert fake.calls == 1
+
+
+def test_sell_screenshot_bumps_price_down(shot):
+    client, fake = shot
+    fake.result = {**PARSED_CRUDE_CE, "side": "SELL"}
+    body = _upload(client).json()
+    assert body["price"] == 439.5          # 488.4 * 0.90, floor to tick
 
 
 def test_full_login_free_flow(shot, ledger, kite):

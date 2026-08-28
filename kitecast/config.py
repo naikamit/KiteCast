@@ -19,6 +19,10 @@ class Settings:
     owner_telegram_chat_id: str = field(default_factory=lambda: _env("OWNER_TELEGRAM_CHAT_ID"))
     # IST time (HH:MM) for the weekday morning login reminder; empty disables.
     login_reminder_time: str = field(default_factory=lambda: _env("LOGIN_REMINDER_TIME", "08:45"))
+    # /screenshot prefill: bump the screenshot's price this % through the
+    # market (BUY up, SELL down) so a stale screenshot still fills.
+    screenshot_price_bump_pct: float = field(default_factory=lambda: float(
+        _env("SCREENSHOT_PRICE_BUMP_PCT", "10")))
     # Claude API key for the /screenshot order parser; empty disables the page.
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
     # Required only for identity-linked API keys (wrkspc_... id from the console).

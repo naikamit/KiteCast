@@ -86,7 +86,9 @@ async function handleFile(f) {
   $('r_qty').value = body.qty;
   $('r_qtyhint').textContent = body.exchange === 'MCX' ? '(lots)' : `(units, lot ${body.lot_size})`;
   $('r_price').value = body.price ?? '';
-  $('r_pricehint').textContent = body.ltp ? `(LTP in screenshot: ${fmt(body.ltp)})` : '';
+  $('r_pricehint').textContent = body.screen_price
+    ? `(screenshot ${fmt(body.screen_price)} ${body.side === 'BUY' ? '+' : '−'}${body.bump_pct}% aggressive)`
+    : '';
   $('review').hidden = false;
 }
 

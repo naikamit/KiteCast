@@ -354,14 +354,25 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         lots = int(parsed.get("qty_lots") or 1)
         # MCX quantity is lots; other segments take units in lot multiples.
         qty = lots if inst["exchange"] == "MCX" else lots * (inst["lot_size"] or 1)
+        side = (parsed.get("side") or "BUY").upper()
+        # Screenshot prices go stale between capture and the friend's tap —
+        # prefill an aggressive limit: screen price ±bump% in the
+        # fill-guaranteeing direction (BUY up, SELL down), tick-rounded.
+        screen_price = parsed.get("limit_price") or parsed.get("ltp")
+        price = None
+        if screen_price:
+            price = basket.protected_limit(side, float(screen_price),
+                                           settings.screenshot_price_bump_pct,
+                                           inst["tick_size"] or 0.05)
         return {
             "exchange": inst["exchange"], "tradingsymbol": inst["tradingsymbol"],
             "lot_size": inst["lot_size"], "expiry": inst["expiry"],
             "dte": days_to_expiry(inst["expiry"]),
             "instrument_type": inst["instrument_type"], "strike": inst["strike"],
-            "side": (parsed.get("side") or "BUY").upper(),
+            "side": side,
             "qty": qty, "lots": lots,
-            "price": parsed.get("limit_price") or parsed.get("ltp"),
+            "price": price, "screen_price": screen_price,
+            "bump_pct": settings.screenshot_price_bump_pct,
             "ltp": parsed.get("ltp"),
         }
 
