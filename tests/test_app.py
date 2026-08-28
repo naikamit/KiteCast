@@ -13,6 +13,7 @@ def client(ledger, kite, telegram, settings, monkeypatch):
     monkeypatch.setattr(app_settings, "kite_api_key", settings.kite_api_key)
     monkeypatch.setattr(app_settings, "kite_api_secret", settings.kite_api_secret)
     monkeypatch.setattr(app_settings, "base_url", settings.base_url)
+    monkeypatch.setattr(app_settings, "db_path", settings.db_path)
     monkeypatch.setattr(app_settings, "share_timing_entry", "fill")
     monkeypatch.setattr(app_settings, "share_timing_exit", "fill")
     return TestClient(build_app(ledger=ledger, kite=kite, telegram=telegram))

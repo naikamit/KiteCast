@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Screenshot → link{% endblock %}
+{% block body %}
+
+<div class="card">
+  <h1>Screenshot → share link</h1>
+  <p class="dim" style="margin-top:-.5rem">Upload (or paste) a broker order-window screenshot. It's parsed, matched
+    to the exact contract, and turned into a one-tap share link — <b>no order is ever placed on my account</b>,
+    and this works even without the daily Kite login.</p>
+
+  {% if not vision_ready %}
+  <p class="dim">⚠️ <b>ANTHROPIC_API_KEY is not set</b> — add it to the server environment to enable this page.</p>
+  {% else %}
+  <div id="drop" style="border:2px dashed var(--line); border-radius:10px; padding:2rem 1rem;
+       text-align:center; cursor:pointer">
+    <div>📷 Drop a screenshot here, click to choose, or paste (Ctrl+V)</div>
+    <div class="dim" style="font-size:.85rem">PNG / JPEG, up to ~4.5 MB</div>
+    <input id="filein" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+  </div>
+  <div id="status" class="dim" style="margin-top:.8rem" hidden></div>
+
+  <div id="review" style="margin-top:1rem" hidden>
+    <div id="contractline" style="font-weight:600; margin-bottom:.6rem"></div>
+    <form class="ticket" id="shareform">
+      <input type="hidden" id="r_exchange"><input type="hidden" id="r_symbol">
+      <div><label>Buy / Sell</label>
+        <select id="r_side"><option>BUY</option><option>SELL</option></select></div>
+      <div><label>Qty <span id="r_qtyhint" class="dim"></span></label>
+        <input id="r_qty" type="number" min="1" required></div>
+      <div><label>Limit price <span id="r_pricehint" class="dim"></span></label>
+        <input id="r_price" type="number" step="any" min="0" required></div>
+      <div><button type="submit">Create share link</button></div>
+    </form>
+    <p class="dim" style="font-size:.85rem">Review before creating — the parse is usually right, but a wrong
+      strike shared to friends costs real money. Always minted as a LIMIT order.</p>
+  </div>
+
+  <div id="links" style="margin-top:1rem" hidden>
+    <div style="display:grid; gap:.5rem">
+      <div style="display:flex; gap:.5rem; align-items:center">
+        <span style="min-width:4rem">Entry</span>
+        <input id="l_entry" readonly onclick="this.select()">
+        <button class="copy" type="button" data-url="">Copy</button>
+      </div>
+      <div style="display:flex; gap:.5rem; align-items:center">
+        <span style="min-width:4rem">Close</span>
+        <input id="l_exit" readonly onclick="this.select()">
+        <button class="copy" type="button" data-url="">Copy</button>
+      </div>
+    </div>
+    <p class="dim" style="font-size:.85rem">One link works for all friends — paste it anywhere. Keep the close
+      link for the exit. Confirms show on the <a href="/" style="color:var(--blue)">console</a> trade row.</p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const drop = $('drop'), filein = $('filein'), statusEl = $('status');
+let parsed = null;
+
+function setStatus(msg) { statusEl.textContent = msg; statusEl.hidden = !msg; }
+
+async function handleFile(f) {
+  if (!f) return;
+  $('review').hidden = true; $('links').hidden = true;
+  setStatus('Reading screenshot…');
+  const fd = new FormData();
+  fd.append('file', f);
+  const r = await fetch('/api/screenshot_parse', {method: 'POST', body: fd});
+  const body = await r.json();
+  if (!r.ok) { setStatus('✗ ' + (body.detail || 'parse failed')); return; }
+  parsed = body;
+  setStatus('');
+  const fmt = v => Number(v).toLocaleString('en-IN');
+  $('contractline').textContent =
+    `${body.exchange}:${body.tradingsymbol}` +
+    (body.dte != null ? ` · ${body.dte} DTE` : '') +
+    (body.strike ? ` · strike ${fmt(body.strike)}` : '') +
+    ` · lot ${body.lot_size}`;
+  $('r_exchange').value = body.exchange;
+  $('r_symbol').value = body.tradingsymbol;
+  $('r_side').value = body.side;
+  $('r_qty').value = body.qty;
+  $('r_qtyhint').textContent = body.exchange === 'MCX' ? '(lots)' : `(units, lot ${body.lot_size})`;
+  $('r_price').value = body.price ?? '';
+  $('r_pricehint').textContent = body.ltp ? `(LTP in screenshot: ${fmt(body.ltp)})` : '';
+  $('review').hidden = false;
+}
+
+drop.addEventListener('click', () => filein.click());
+filein.addEventListener('change', () => handleFile(filein.files[0]));
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--blue)'; });
+drop.addEventListener('dragleave', () => drop.style.borderColor = 'var(--line)');
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.style.borderColor = 'var(--line)';
+  handleFile(e.dataTransfer.files[0]);
+});
+document.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) handleFile(item.getAsFile());
+});
+
+$('shareform').addEventListener('submit', async e => {
+  e.preventDefault();
+  setStatus('Creating share link…');
+  const fd = new URLSearchParams({
+    exchange: $('r_exchange').value, tradingsymbol: $('r_symbol').value,
+    side: $('r_side').value, qty: $('r_qty').value, price: $('r_price').value,
+  });
+  const r = await fetch('/api/screenshot_share', {
+    method: 'POST', body: fd,
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+  });
+  const body = await r.json();
+  if (!r.ok) { setStatus('✗ ' + (body.detail || 'failed')); return; }
+  setStatus('');
+  $('l_entry').value = body.entry_url;
+  $('l_exit').value = body.exit_url;
+  const btns = document.querySelectorAll('#links .copy');
+  btns[0].dataset.url = body.entry_url;
+  btns[1].dataset.url = body.exit_url;
+  $('links').hidden = false;
+});
+
+document.addEventListener('click', async e => {
+  const btn = e.target.closest('.copy');
+  if (!btn || !btn.dataset.url) return;
+  try { await navigator.clipboard.writeText(btn.dataset.url); }
+  catch (err) { prompt('Copy the mirror link:', btn.dataset.url); return; }
+  const old = btn.textContent;
+  btn.textContent = '✓ copied';
+  setTimeout(() => { btn.textContent = old; }, 1500);
+});
+</script>
+{% endblock %}

@@ -11,6 +11,7 @@ import io
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 TRADABLE_EXCHANGES = {"MCX", "NFO", "NSE", "BSE", "CDS", "BFO"}
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -38,10 +39,28 @@ def moneyness(atm_pct: float | None, instrument_type: str) -> str | None:
     return f"{abs(atm_pct):.1f}% {'OTM' if otm else 'ITM'}"
 
 
+def _expiry_matches(expiry: str, parsed: dict) -> bool:
+    """Does an ISO expiry match the (possibly partial) day/month/year a
+    screenshot showed? Missing parts match anything."""
+    if not expiry:
+        return False
+    d, m, y = parsed.get("expiry_day"), parsed.get("expiry_month"), parsed.get("expiry_year")
+    if d is None and m is None and y is None:
+        return True
+    year, month, day = expiry[:10].split("-")
+    return ((d is None or int(day) == int(d))
+            and (m is None or int(month) == int(m))
+            and (y is None or int(year) % 100 == int(y) % 100))
+
+
 class InstrumentStore:
-    def __init__(self, kite, ttl_seconds: int = 12 * 3600):
+    def __init__(self, kite, ttl_seconds: int = 12 * 3600, cache_path: str | None = None):
         self.kite = kite
         self.ttl = ttl_seconds
+        # Disk copy of the dump: survives restarts, so symbol resolution keeps
+        # working without a Kite login (fetching the dump needs auth; the data
+        # itself is static public reference data).
+        self.cache_path = cache_path
         self._rows: list[dict] = []
         self._by_key: dict[tuple[str, str], dict] = {}
         self._loaded_at = 0.0
@@ -51,7 +70,27 @@ class InstrumentStore:
         with self._lock:
             if self._rows and time.time() - self._loaded_at < self.ttl:
                 return
-            text = self.kite.instruments_csv()
+            try:
+                text = self.kite.instruments_csv()
+            except Exception:
+                retry_at = time.time() - self.ttl + 900  # try live again in 15 min
+                if self._rows:
+                    self._loaded_at = retry_at  # keep serving the stale copy
+                    return
+                if self.cache_path and Path(self.cache_path).exists():
+                    self._parse(Path(self.cache_path).read_text())
+                    self._loaded_at = retry_at
+                    return
+                raise
+            if self.cache_path:
+                try:
+                    Path(self.cache_path).write_text(text)
+                except OSError:
+                    pass
+            self._parse(text)
+            self._loaded_at = time.time()
+
+    def _parse(self, text: str) -> None:
             rows = []
             for r in csv.DictReader(io.StringIO(text)):
                 if r.get("exchange") not in TRADABLE_EXCHANGES:
@@ -84,7 +123,6 @@ class InstrumentStore:
                 else:
                     g["equity"] += 1
             self._underlyings = list(groups.values())
-            self._loaded_at = time.time()
 
     def search(self, query: str, limit: int = 20) -> list[dict]:
         """Rank tradingsymbol prefix > tradingsymbol substring > name matches;
@@ -157,6 +195,36 @@ class InstrumentStore:
                     for x in rows if x["instrument_type"] not in ("FUT", "CE", "PE")]
         return {"exchange": exchange, "name": name,
                 "futures": futures, "options": options, "equities": equities}
+
+    def resolve_screenshot(self, parsed: dict) -> dict | None:
+        """Match a vision-parsed order (underlying name + expiry parts +
+        strike + type) to one exact tradable instrument. Returns None rather
+        than guessing when nothing fits."""
+        name_q = (parsed.get("underlying") or "").strip().upper()
+        itype = (parsed.get("instrument_type") or "").strip().upper()
+        if not name_q:
+            return None
+        matches = self.search_underlyings(name_q, limit=8)
+        matches.sort(key=lambda g: g["name"] != name_q)  # exact name first
+        for g in matches:
+            chain = self.chain(g["exchange"], g["name"])
+            if itype == "EQ":
+                if chain["equities"]:
+                    return self.get(g["exchange"], chain["equities"][0]["tradingsymbol"])
+                continue
+            if itype == "FUT":
+                rows = chain["futures"]
+            else:
+                strike = parsed.get("strike")
+                rows = [o for o in chain["options"] if o["type"] == itype
+                        and (strike is None or o["strike"] == float(strike))]
+            rows = [r for r in rows
+                    if _expiry_matches(r["expiry"], parsed)
+                    and (r["dte"] is None or r["dte"] >= 0)]
+            if rows:
+                r = min(rows, key=lambda x: x["expiry"] or "9999-99-99")
+                return self.get(g["exchange"], r["tradingsymbol"])
+        return None
 
     def underlying_future(self, exchange: str, name: str) -> dict | None:
         """Nearest-expiry future on the same exchange/name — the reference

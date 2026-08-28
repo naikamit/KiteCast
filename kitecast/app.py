@@ -8,7 +8,7 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -19,6 +19,7 @@ from .instruments import InstrumentStore, days_to_expiry, moneyness
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
 from .telegram import TelegramClient
+from .vision import VisionExtractor
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -26,13 +27,18 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
 def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
-              telegram: TelegramClient | None = None) -> FastAPI:
+              telegram: TelegramClient | None = None,
+              vision: VisionExtractor | None = None) -> FastAPI:
     ledger = ledger or Ledger(settings.db_path)
     kite = kite or KiteClient(settings.kite_api_key, settings.kite_api_secret,
                               access_token=ledger.kv_get("access_token"),
                               order_proxy=settings.kite_order_proxy)
     telegram = telegram or TelegramClient(settings.telegram_bot_token)
-    store = InstrumentStore(kite)
+    vision = vision or VisionExtractor(settings.anthropic_api_key, settings.vision_model)
+    dump_cache = None
+    if settings.db_path and settings.db_path != ":memory:":
+        dump_cache = str(Path(settings.db_path).resolve().with_name("instruments_cache.csv"))
+    store = InstrumentStore(kite, cache_path=dump_cache)
     service = TradeShareService(ledger, kite, telegram, settings, store=store)
 
     app = FastAPI(title="KiteCast Trade Share")
@@ -311,6 +317,74 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "span": margin.get("span"), "exposure": margin.get("exposure"),
             "option_premium": margin.get("option_premium"),
             "margin_error": margin.get("error"),
+        }
+
+    # ---- screenshot -> share link (the login-free path) ----
+
+    @app.get("/screenshot", response_class=HTMLResponse)
+    def screenshot_page(request: Request):
+        return templates.TemplateResponse(request, "screenshot.html", {
+            "vision_ready": vision.configured,
+        })
+
+    @app.post("/api/screenshot_parse")
+    async def screenshot_parse(file: UploadFile = File(...)):
+        if not vision.configured:
+            raise HTTPException(503, "ANTHROPIC_API_KEY is not configured on the server")
+        if file.content_type not in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+            raise HTTPException(400, "Upload a PNG or JPEG screenshot")
+        data = await file.read()
+        if len(data) > 4_500_000:
+            raise HTTPException(400, "Image too large (max ~4.5 MB)")
+        try:
+            parsed = vision.extract(data, file.content_type)
+        except Exception as e:
+            raise HTTPException(502, f"Couldn't read the screenshot: {e}")
+        try:
+            inst = store.resolve_screenshot(parsed)
+        except KiteError as e:
+            raise HTTPException(409, f"Instrument master unavailable: {e}")
+        if inst is None:
+            raise HTTPException(
+                422, f"Read '{parsed.get('underlying')}' but couldn't match it to a "
+                     "tradable contract — check the screenshot shows the order window")
+        lots = int(parsed.get("qty_lots") or 1)
+        # MCX quantity is lots; other segments take units in lot multiples.
+        qty = lots if inst["exchange"] == "MCX" else lots * (inst["lot_size"] or 1)
+        return {
+            "exchange": inst["exchange"], "tradingsymbol": inst["tradingsymbol"],
+            "lot_size": inst["lot_size"], "expiry": inst["expiry"],
+            "dte": days_to_expiry(inst["expiry"]),
+            "instrument_type": inst["instrument_type"], "strike": inst["strike"],
+            "side": (parsed.get("side") or "BUY").upper(),
+            "qty": qty, "lots": lots,
+            "price": parsed.get("limit_price") or parsed.get("ltp"),
+            "ltp": parsed.get("ltp"),
+        }
+
+    @app.post("/api/screenshot_share")
+    def screenshot_share(exchange: str = Form(...), tradingsymbol: str = Form(...),
+                         side: str = Form(...), qty: int = Form(...),
+                         price: float = Form(...)):
+        """Mint the share-only links for a reviewed screenshot order. Always a
+        LIMIT (so friend taps never need my Kite session for price anchoring)."""
+        tradingsymbol = tradingsymbol.strip().upper()
+        if side not in ("BUY", "SELL") or qty <= 0 or price <= 0:
+            raise HTTPException(400, "Invalid order")
+        try:
+            if store.get(exchange, tradingsymbol) is None:
+                raise HTTPException(404, "Unknown contract")
+        except KiteError:
+            pass  # master temporarily unavailable; the parse step already validated
+        trade_id = service.share_only(
+            tradingsymbol=tradingsymbol, exchange=exchange, side=side, qty=qty,
+            product="NRML", order_type="LIMIT", price=price,
+        )
+        trade = ledger.trade(trade_id)
+        return {
+            "trade_id": trade_id,
+            "entry_url": f"{settings.base_url}/t/{trade['public_entry_token']}",
+            "exit_url": f"{settings.base_url}/t/{trade['public_exit_token']}",
         }
 
     # ---- daily Kite login ----

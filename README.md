@@ -47,6 +47,7 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 | `/` | me | Ticket with live contract search (Kite instrument master + full quote: LTP, OHLC, bid/ask, OI, circuits, lot/tick/expiry) → **Place & Share** / **Close & Share**, my fill status |
 | `/board` | me | Per-friend board: entry/exit link live · confirmed (green/amber), copy/WA buttons per friend |
 | `/friends` | me | The private circle (4 named friends), per-friend multipliers, on/off |
+| `/screenshot` | me | Upload/paste a broker order screenshot → Claude parses it → validated against the instrument master → review → share-only LIMIT links with copy buttons. Needs `ANTHROPIC_API_KEY`; the whole path works **without the daily Kite login** (dump is disk-cached, LIMIT needs no live anchor) |
 | `/m/{token}` | friend | Auto-submitting pre-filled Kite basket — one tap to confirm |
 | `/kite/postback` | Kite | My order fills (checksum-verified) |
 | `/kite/redirect` | Kite | My daily login **and** friends' basket confirmations |
