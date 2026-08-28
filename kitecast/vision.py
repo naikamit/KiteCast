@@ -27,9 +27,12 @@ entry box when a Limit order is selected, else null. ltp is the last traded pric
 
 
 class VisionExtractor:
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, api_key: str, model: str, workspace_id: str = ""):
         self.api_key = api_key
         self.model = model
+        # Identity-linked API keys require the workspace id on every request;
+        # workspace-scoped keys don't need it.
+        self.workspace_id = workspace_id
 
     @property
     def configured(self) -> bool:
@@ -38,7 +41,8 @@ class VisionExtractor:
     def extract(self, image_bytes: bytes, media_type: str) -> dict:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=self.api_key)
+        headers = {"anthropic-workspace-id": self.workspace_id} if self.workspace_id else None
+        client = anthropic.Anthropic(api_key=self.api_key, default_headers=headers)
         response = client.messages.create(
             model=self.model,
             max_tokens=1024,

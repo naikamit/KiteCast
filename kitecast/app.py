@@ -34,7 +34,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                               access_token=ledger.kv_get("access_token"),
                               order_proxy=settings.kite_order_proxy)
     telegram = telegram or TelegramClient(settings.telegram_bot_token)
-    vision = vision or VisionExtractor(settings.anthropic_api_key, settings.vision_model)
+    vision = vision or VisionExtractor(settings.anthropic_api_key, settings.vision_model,
+                                       workspace_id=settings.anthropic_workspace_id)
     dump_cache = None
     if settings.db_path and settings.db_path != ":memory:":
         dump_cache = str(Path(settings.db_path).resolve().with_name("instruments_cache.csv"))

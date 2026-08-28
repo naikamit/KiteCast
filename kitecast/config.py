@@ -21,6 +21,8 @@ class Settings:
     login_reminder_time: str = field(default_factory=lambda: _env("LOGIN_REMINDER_TIME", "08:45"))
     # Claude API key for the /screenshot order parser; empty disables the page.
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
+    # Required only for identity-linked API keys (wrkspc_... id from the console).
+    anthropic_workspace_id: str = field(default_factory=lambda: _env("ANTHROPIC_WORKSPACE_ID"))
     vision_model: str = field(default_factory=lambda: _env("VISION_MODEL", "claude-opus-5"))
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "kitecast.db"))
     # Open decision 10 — share timing: "fill" (default) or "placement".
