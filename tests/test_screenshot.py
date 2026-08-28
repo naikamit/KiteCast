@@ -16,6 +16,8 @@ PARSED_CRUDE_CE = {
 class FakeVision:
     def __init__(self, result):
         self.configured = True
+        self.api_key = "fake-key"
+        self.workspace_id = ""
         self.result = result
         self.calls = 0
 
@@ -99,8 +101,11 @@ def test_unmatched_underlying_is_rejected(shot):
 def test_unconfigured_vision_gives_clear_error(shot):
     client, fake = shot
     fake.configured = False
+    fake.api_key = ""
     assert _upload(client).status_code == 503
-    assert "ANTHROPIC_API_KEY" in client.get("/screenshot").text
+    page = client.get("/screenshot").text
+    assert "ANTHROPIC_API_KEY" in page
+    assert "✗ missing" in page          # per-value self-diagnosis
 
 
 def test_screenshot_page_renders(shot):
