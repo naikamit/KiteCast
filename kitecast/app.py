@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
+from .ebook import EbookStore, parse_chapters, word_count
 from .instruments import InstrumentStore, days_to_expiry, moneyness
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
@@ -504,6 +505,47 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                                                 token_param="public_token"),
             "already_confirmed": False,
         })
+
+    # ---- ebook: Kindle-style reader + upload admin (single book) ----
+
+    ebook_path = None
+    if settings.db_path and settings.db_path != ":memory:":
+        ebook_path = str(Path(settings.db_path).resolve().with_name("ebook_millsandgoons.json"))
+    ebook = EbookStore(ebook_path)
+
+    @app.get("/millsandgoons", response_class=HTMLResponse)
+    def ebook_reader(request: Request):
+        book = ebook.load() or {}
+        return templates.TemplateResponse(request, "ebook_reader.html", {
+            "title": book.get("title", "Mills & Goons"),
+            "chapters": parse_chapters(book.get("text", "")),
+        })
+
+    def _ebook_admin_ctx(request: Request, flash: str | None = None):
+        book = ebook.load() or {}
+        text = book.get("text", "")
+        return {
+            "title": book.get("title", ""), "text": text,
+            "chapters": parse_chapters(text), "words": word_count(text),
+            "flash": flash,
+        }
+
+    @app.get("/millsandgoonsadmin", response_class=HTMLResponse)
+    def ebook_admin(request: Request):
+        return templates.TemplateResponse(request, "ebook_admin.html",
+                                          _ebook_admin_ctx(request))
+
+    @app.post("/millsandgoonsadmin", response_class=HTMLResponse)
+    async def ebook_admin_save(request: Request, title: str = Form(""),
+                               text: str = Form(""),
+                               textfile: UploadFile | None = File(None)):
+        if textfile is not None and textfile.filename:
+            text = (await textfile.read()).decode("utf-8", errors="replace")
+        if not text.strip():
+            raise HTTPException(400, "Book text is empty")
+        ebook.save(title, text)
+        return templates.TemplateResponse(request, "ebook_admin.html",
+                                          _ebook_admin_ctx(request, flash="Book saved."))
 
     return app
 

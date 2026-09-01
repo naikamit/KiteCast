@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mills &amp; Goons · Admin</title>
+<style>
+  :root { --bg:#0e1116; --card:#171c24; --line:#2a3240; --fg:#e6e9ee; --dim:#8b95a5;
+          --blue:#4c8dff; --green:#2fbf71; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:1.2rem 1rem 3rem; }
+  h1 { font-size:1.15rem; margin:.4rem 0 1rem; }
+  h1 a { color:var(--dim); font-weight:400; font-size:.85rem; text-decoration:none; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:1rem 1.2rem; margin-bottom:1.2rem; }
+  label { display:block; color:var(--dim); font-size:.8rem; margin:0.8rem 0 .25rem; }
+  input[type=text], textarea { width:100%; padding:.5rem .6rem; background:#0b0e13;
+        color:var(--fg); border:1px solid var(--line); border-radius:6px; font:inherit; }
+  textarea { min-height:45vh; font:13px/1.5 ui-monospace, Menlo, Consolas, monospace;
+             resize:vertical; }
+  input[type=file] { color:var(--dim); font-size:.85rem; }
+  button { margin-top:1rem; padding:.55rem 1.1rem; border:0; border-radius:6px;
+           background:var(--blue); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  .flash { border-left:3px solid var(--green); padding:.5rem .8rem; margin-bottom:1rem;
+           background:var(--card); border-radius:0 8px 8px 0; }
+  .stats { color:var(--dim); font-size:.85rem; }
+  .stats b { color:var(--fg); }
+  ol { margin:.5rem 0 0; padding-left:1.4rem; color:var(--dim); font-size:.88rem; }
+  ol li { padding:.1rem 0; }
+  .hint { color:var(--dim); font-size:.8rem; margin-top:.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mills &amp; Goons — ebook admin &nbsp; <a href="/millsandgoons">open reader →</a></h1>
+
+  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+  <div class="card">
+    <form method="post" action="/millsandgoonsadmin" enctype="multipart/form-data">
+      <label for="title">Book title</label>
+      <input type="text" id="title" name="title" value="{{ title }}" placeholder="Mills &amp; Goons">
+
+      <label for="text">Full text (paste here…)</label>
+      <textarea id="text" name="text" placeholder="Chapter 1&#10;&#10;It was a dark and stormy night…">{{ text }}</textarea>
+
+      <label for="textfile">…or upload a .txt file (overrides the box above)</label>
+      <input type="file" id="textfile" name="textfile" accept=".txt,text/plain">
+
+      <button type="submit">Save book</button>
+      <div class="hint">Chapters are detected from lines like “Chapter 3”, “Prologue”,
+        “Part Two”, or markdown “# Heading”. Blank lines separate paragraphs.</div>
+    </form>
+  </div>
+
+  {% if chapters %}
+  <div class="card">
+    <div class="stats"><b>{{ words }}</b> words · <b>{{ chapters|length }}</b> chapter{{ 's' if chapters|length != 1 }} detected</div>
+    <ol>
+      {% for ch in chapters %}<li>{{ ch.title or "(unnamed opening)" }} <span class="stats">— {{ ch.paragraphs|length }} paragraphs</span></li>{% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+</main>
+</body>
+</html>

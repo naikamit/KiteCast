@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>{{ title }}</title>
+<style>
+  :root {
+    --fs: 19px;
+    --bg:#faf7f0; --fg:#1b1b1b; --dim:#8a8477; --line:#e4dfd4;
+    --panel:#fffdf8; --accent:#c86f2c;
+  }
+  :root[data-theme="dark"] {
+    --bg:#111214; --fg:#cfcbc2; --dim:#6d6a63; --line:#2a2b2e;
+    --panel:#1a1b1e; --accent:#d98e4a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#111214; --fg:#cfcbc2; --dim:#6d6a63; --line:#2a2b2e;
+      --panel:#1a1b1e; --accent:#d98e4a;
+    }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', serif;
+    overscroll-behavior:none; -webkit-text-size-adjust:100%;
+    user-select:none; -webkit-user-select:none;
+  }
+
+  /* ---- the page viewport: every pixel goes to the story ---- */
+  #viewport {
+    position:fixed; inset:0; overflow:hidden; touch-action:none;
+    padding: calc(14px + env(safe-area-inset-top))
+             calc(22px + env(safe-area-inset-right))
+             calc(30px + env(safe-area-inset-bottom))
+             calc(22px + env(safe-area-inset-left));
+  }
+  #window { width:100%; height:100%; overflow:hidden; }
+  #content {
+    height:100%; column-fill:auto; column-gap:44px;
+    font-size:var(--fs); line-height:1.55;
+    text-align:justify; hyphens:auto; -webkit-hyphens:auto;
+    will-change:transform;
+  }
+  #content.animate { transition:transform .18s ease-out; }
+  #content p { margin:0; text-indent:1.4em; orphans:2; widows:2; }
+  #content p.first { text-indent:0; }
+  #content h2 {
+    font-size:1.25em; font-weight:normal; letter-spacing:.04em;
+    margin:2.2em 0 1.4em; text-align:center; text-indent:0;
+    break-before:column; break-after:avoid;
+  }
+  #content h2:first-child { break-before:auto; }
+  #content h1 {
+    font-size:1.6em; font-weight:normal; text-align:center; text-indent:0;
+    margin:30vh 0 .4em; letter-spacing:.05em; break-after:column;
+  }
+
+  /* ---- tiny always-on progress line ---- */
+  #progress {
+    position:fixed; left:0; right:0;
+    bottom:calc(6px + env(safe-area-inset-bottom));
+    display:flex; justify-content:space-between;
+    padding:0 calc(22px + env(safe-area-inset-left)) 0 calc(22px + env(safe-area-inset-right));
+    font-family:system-ui, sans-serif; font-size:11px; color:var(--dim);
+    pointer-events:none; white-space:nowrap;
+  }
+  #progress .ch { overflow:hidden; text-overflow:ellipsis; margin-right:1em; }
+
+  /* ---- chrome (tap center to toggle) ---- */
+  #chrome { position:fixed; inset:0; display:none; pointer-events:none; z-index:20; }
+  #chrome.open { display:block; }
+  #topbar {
+    position:absolute; top:0; left:0; right:0; pointer-events:auto;
+    display:flex; align-items:center; gap:8px;
+    padding:calc(8px + env(safe-area-inset-top)) 12px 8px;
+    background:var(--panel); border-bottom:1px solid var(--line);
+    font-family:system-ui, sans-serif;
+  }
+  #topbar .title {
+    flex:1; font-size:14px; font-weight:600;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .iconbtn {
+    background:none; border:1px solid var(--line); color:var(--fg);
+    border-radius:8px; padding:7px 12px; font:14px system-ui, sans-serif; cursor:pointer;
+  }
+  .iconbtn.active { border-color:var(--accent); color:var(--accent); }
+
+  /* ---- slide-up panels ---- */
+  .panel {
+    position:absolute; left:0; right:0; bottom:0; pointer-events:auto;
+    background:var(--panel); border-top:1px solid var(--line);
+    border-radius:14px 14px 0 0;
+    padding:14px 16px calc(16px + env(safe-area-inset-bottom));
+    font-family:system-ui, sans-serif; display:none;
+    max-height:65%; overflow-y:auto; touch-action:pan-y;
+  }
+  .panel.open { display:block; }
+  .panel h3 { margin:2px 0 10px; font-size:12px; text-transform:uppercase;
+              letter-spacing:.08em; color:var(--dim); font-weight:600; }
+  #toc a {
+    display:block; padding:11px 4px; color:var(--fg); text-decoration:none;
+    border-bottom:1px solid var(--line); font-size:15px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #toc a:last-child { border-bottom:0; }
+  #toc a.now { color:var(--accent); }
+  .row { display:flex; align-items:center; gap:10px; margin:12px 0; }
+  .row .lbl { width:52px; font-size:13px; color:var(--dim); }
+  .sizebtn {
+    flex:1; background:none; border:1px solid var(--line); color:var(--fg);
+    border-radius:10px; padding:10px 0; cursor:pointer; font-family:Georgia, serif;
+  }
+  .sizebtn.small { font-size:14px; } .sizebtn.big { font-size:22px; }
+  .themebtn {
+    flex:1; border:1px solid var(--line); border-radius:10px; padding:10px 0;
+    font:14px system-ui, sans-serif; cursor:pointer;
+  }
+  .themebtn.light { background:#faf7f0; color:#1b1b1b; }
+  .themebtn.dark { background:#111214; color:#cfcbc2; }
+  .themebtn.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+
+  #empty {
+    position:fixed; inset:0; display:flex; flex-direction:column; gap:8px;
+    align-items:center; justify-content:center; color:var(--dim);
+    font-family:system-ui, sans-serif; font-size:15px; padding:2em; text-align:center;
+  }
+  #empty a { color:var(--accent); }
+</style>
+</head>
+<body>
+
+{% if not chapters %}
+<div id="empty">
+  <div style="font-size:2em">📖</div>
+  <div>No book yet.</div>
+  <div>Upload the text on the <a href="/millsandgoonsadmin">admin page</a>.</div>
+</div>
+{% else %}
+
+<div id="viewport">
+  <div id="window">
+    <div id="content">
+      <h1 data-i="0">{{ title }}</h1>
+      {%- set ns = namespace(i=1) -%}
+      {%- for ch in chapters -%}
+        {%- if ch.title -%}
+          <h2 data-i="{{ ns.i }}" data-ch="{{ loop.index0 }}">{{ ch.title }}</h2>
+          {%- set ns.i = ns.i + 1 -%}
+        {%- endif -%}
+        {%- for p in ch.paragraphs -%}
+          <p data-i="{{ ns.i }}"{% if not ch.title and loop.first %} data-ch="{{ loop.index0 }}"{% endif %}{% if loop.first %} class="first"{% endif %}>{{ p }}</p>
+          {%- set ns.i = ns.i + 1 -%}
+        {%- endfor -%}
+      {%- endfor -%}
+    </div>
+  </div>
+</div>
+
+<div id="progress"><span class="ch" id="progCh"></span><span id="progPct"></span></div>
+
+<div id="chrome">
+  <div id="topbar">
+    <div class="title">{{ title }}</div>
+    <button class="iconbtn" id="tocBtn">Chapters</button>
+    <button class="iconbtn" id="aaBtn">Aa</button>
+  </div>
+  <div class="panel" id="toc">
+    <h3>Chapters</h3>
+    {%- for ch in chapters %}
+    <a href="#" data-ch="{{ loop.index0 }}">{{ ch.title or "Beginning" }}</a>
+    {%- endfor %}
+  </div>
+  <div class="panel" id="aa">
+    <h3>Display</h3>
+    <div class="row">
+      <span class="lbl">Size</span>
+      <button class="sizebtn small" id="fsDown">A</button>
+      <button class="sizebtn big" id="fsUp">A</button>
+    </div>
+    <div class="row">
+      <span class="lbl">Theme</span>
+      <button class="themebtn light" data-theme="light">Light</button>
+      <button class="themebtn dark" data-theme="dark">Dark</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var content = document.getElementById('content');
+  var winEl = document.getElementById('window');
+  var chrome_ = document.getElementById('chrome');
+  var toc = document.getElementById('toc');
+  var aa = document.getElementById('aa');
+  var progCh = document.getElementById('progCh');
+  var progPct = document.getElementById('progPct');
+
+  var LS = { fs:'mg_fs', theme:'mg_theme', pos:'mg_pos' };
+  var GAP = 44, FS_MIN = 13, FS_MAX = 34;
+  var page = 0, pages = 1, pw = 0, step = 0;
+  var blocks = content.querySelectorAll('[data-i]');
+  var headings = content.querySelectorAll('[data-ch]');
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  /* ---- theme ---- */
+  function setTheme(t) {
+    if (t) document.documentElement.setAttribute('data-theme', t);
+    lsSet(LS.theme, t);
+    document.querySelectorAll('.themebtn').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.theme === t);
+    });
+  }
+  var savedTheme = lsGet(LS.theme);
+  if (savedTheme) setTheme(savedTheme);
+
+  /* ---- font size ---- */
+  var fs = parseFloat(lsGet(LS.fs)) || 19;
+  fs = Math.min(FS_MAX, Math.max(FS_MIN, fs));
+
+  function applyFs(v) {
+    document.documentElement.style.setProperty('--fs', v.toFixed(1) + 'px');
+  }
+  applyFs(fs);
+
+  /* ---- pagination ---- */
+  function paginate() {
+    pw = winEl.clientWidth;
+    step = pw + GAP;
+    content.style.columnWidth = pw + 'px';
+    content.style.width = pw + 'px';
+    pages = Math.max(1, Math.round((content.scrollWidth + GAP) / step));
+  }
+
+  function goTo(p, animate) {
+    page = Math.min(pages - 1, Math.max(0, p));
+    content.classList.toggle('animate', !!animate);
+    content.style.transform = 'translateX(' + (-page * step) + 'px)';
+    updateProgress();
+    lsSet(LS.pos, String(anchorIndex()));
+  }
+
+  function pageOf(el) { return Math.max(0, Math.round(el.offsetLeft / step)); }
+
+  // First block visible on the current page — survives repagination.
+  function anchorIndex() {
+    var left = page * step - 4;
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].offsetLeft + blocks[i].offsetWidth > left &&
+          pageOf(blocks[i]) >= page) return +blocks[i].dataset.i;
+    }
+    for (var j = blocks.length - 1; j >= 0; j--) {
+      if (blocks[j].offsetLeft <= left) return +blocks[j].dataset.i;
+    }
+    return 0;
+  }
+
+  function blockByIndex(i) {
+    for (var k = 0; k < blocks.length; k++)
+      if (+blocks[k].dataset.i === i) return blocks[k];
+    return blocks[0];
+  }
+
+  function repaginate(anchor) {
+    paginate();
+    goTo(pageOf(blockByIndex(anchor)), false);
+  }
+
+  function updateProgress() {
+    var pct = pages > 1 ? Math.round(page / (pages - 1) * 100) : 100;
+    progPct.textContent = pct + '%';
+    var name = '';
+    var left = page * step + 4;
+    for (var i = 0; i < headings.length; i++) {
+      if (headings[i].offsetLeft <= left) name = headings[i].tagName === 'H2'
+        ? headings[i].textContent : '';
+      else break;
+    }
+    progCh.textContent = name;
+    var cur = -1;
+    for (var j = 0; j < headings.length; j++)
+      if (headings[j].offsetLeft <= left) cur = j;
+    document.querySelectorAll('#toc a').forEach(function (a) {
+      a.classList.toggle('now', +a.dataset.ch === cur);
+    });
+  }
+
+  /* ---- chrome / panels ---- */
+  function closePanels() { toc.classList.remove('open'); aa.classList.remove('open'); }
+  function toggleChrome(force) {
+    var open = force !== undefined ? force : !chrome_.classList.contains('open');
+    chrome_.classList.toggle('open', open);
+    if (!open) closePanels();
+  }
+  document.getElementById('tocBtn').addEventListener('click', function () {
+    aa.classList.remove('open'); toc.classList.toggle('open');
+  });
+  document.getElementById('aaBtn').addEventListener('click', function () {
+    toc.classList.remove('open'); aa.classList.toggle('open');
+  });
+  toc.addEventListener('click', function (e) {
+    var a = e.target.closest('a'); if (!a) return;
+    e.preventDefault();
+    var h = content.querySelector('[data-ch="' + a.dataset.ch + '"]');
+    if (h) goTo(pageOf(h), false);
+    toggleChrome(false);
+  });
+
+  function bumpFs(d) {
+    var a = anchorIndex();
+    fs = Math.min(FS_MAX, Math.max(FS_MIN, fs + d));
+    applyFs(fs); lsSet(LS.fs, String(fs));
+    repaginate(a);
+  }
+  document.getElementById('fsDown').addEventListener('click', function () { bumpFs(-1.5); });
+  document.getElementById('fsUp').addEventListener('click', function () { bumpFs(1.5); });
+  document.querySelectorAll('.themebtn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = anchorIndex();
+      setTheme(b.dataset.theme);
+      repaginate(a);   // metrics can shift a hair between themes on some fonts
+    });
+  });
+
+  /* ---- touch: swipe, tap zones, pinch ---- */
+  var vp = document.getElementById('viewport');
+  var t0 = null, pinch = null, moved = false;
+
+  function dist(ts) {
+    var dx = ts[0].clientX - ts[1].clientX, dy = ts[0].clientY - ts[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  vp.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 2) {
+      pinch = { d0: dist(e.touches), fs0: fs, anchor: anchorIndex(), raf: 0 };
+      t0 = null;
+    } else if (e.touches.length === 1 && !pinch) {
+      t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+      moved = false;
+    }
+  }, { passive: true });
+
+  vp.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    if (pinch && e.touches.length === 2) {
+      var scale = dist(e.touches) / pinch.d0;
+      var next = Math.min(FS_MAX, Math.max(FS_MIN, pinch.fs0 * scale));
+      if (Math.abs(next - fs) > 0.2 && !pinch.raf) {
+        pinch.raf = requestAnimationFrame(function () {
+          pinch && (pinch.raf = 0);
+          fs = next; applyFs(fs);
+        });
+      }
+    } else if (t0) {
+      moved = true;
+    }
+  }, { passive: false });
+
+  vp.addEventListener('touchend', function (e) {
+    if (pinch) {
+      if (e.touches.length === 0) {
+        lsSet(LS.fs, String(fs));
+        repaginate(pinch.anchor);
+        pinch = null;
+      }
+      return;
+    }
+    if (!t0 || e.touches.length) return;
+    var dx = e.changedTouches[0].clientX - t0.x;
+    var dy = e.changedTouches[0].clientY - t0.y;
+    var quick = Date.now() - t0.t < 600;
+    t0 = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) && quick) {
+      toggleChrome(false);
+      goTo(page + (dx < 0 ? 1 : -1), true);
+      return;
+    }
+    if (moved) return;
+    var x = e.changedTouches[0].clientX / window.innerWidth;
+    if (chrome_.classList.contains('open')) { toggleChrome(false); return; }
+    if (x < 0.25) goTo(page - 1, true);
+    else if (x > 0.75) goTo(page + 1, true);
+    else toggleChrome(true);
+  });
+
+  /* desktop conveniences */
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') goTo(page + 1, true);
+    else if (e.key === 'ArrowLeft') goTo(page - 1, true);
+  });
+  vp.addEventListener('click', function (e) {
+    if ('ontouchstart' in window) return;
+    var x = e.clientX / window.innerWidth;
+    if (chrome_.classList.contains('open')) { toggleChrome(false); return; }
+    if (x < 0.25) goTo(page - 1, true);
+    else if (x > 0.75) goTo(page + 1, true);
+    else toggleChrome(true);
+  });
+
+  var rt = 0;
+  window.addEventListener('resize', function () {
+    var a = anchorIndex();
+    clearTimeout(rt);
+    rt = setTimeout(function () { repaginate(a); }, 120);
+  });
+
+  /* ---- boot ---- */
+  paginate();
+  var saved = parseInt(lsGet(LS.pos), 10);
+  goTo(isNaN(saved) ? 0 : pageOf(blockByIndex(saved)), false);
+  // Fonts finishing loading can reflow; settle once more.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () {
+      var a = anchorIndex(); repaginate(a);
+    });
+  }
+})();
+</script>
+{% endif %}
+</body>
+</html>
