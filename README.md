@@ -51,6 +51,23 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 | `/m/{token}` | friend | Auto-submitting pre-filled Kite basket — one tap to confirm |
 | `/kite/postback` | Kite | My order fills (checksum-verified) |
 | `/kite/redirect` | Kite | My daily login **and** friends' basket confirmations |
+| `/millsandgoons` | readers | Ebook library shelf — covers, authors, per-book reading progress |
+| `/millsandgoons/b/{slug}` | readers | Kindle-style reader: paged text, swipe/tap page turns, pinch to resize, chapters, light/dark |
+| `/millsandgoonsadmin` | me | Add books by uploading `.docx` (pictures included), `.txt`/`.md`, or pasted text; edit or delete them |
+
+### Ebooks
+
+A side room in the same app, unrelated to trading: a small reading library
+under `/millsandgoons`. Books live as files next to the SQLite ledger
+(`ebooks/<slug>/book.json` plus a `media/` folder), so on a host with a
+persistent disk point `DB_PATH` at it and the shelf survives redeploys.
+
+Uploaded `.docx` files are unzipped and parsed with the stdlib — chapters come
+from Word's heading styles (falling back to lines like "Chapter 3" /
+"Prologue"), and embedded pictures are extracted and kept in place in the
+flow. EMF/WMF drawings are skipped because browsers can't draw them.
+Reading position, text size and theme live in the reader's own browser, not
+on the server.
 
 ## Setup
 

@@ -7,6 +7,7 @@ import logging
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -15,7 +16,8 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
-from .ebook import EbookStore, parse_chapters, word_count
+from .ebook import (Library, blocks_to_text, image_count, media_type, parse_text_with_images,
+                    parse_upload, prepare, word_count)
 from .instruments import InstrumentStore, days_to_expiry, moneyness
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
@@ -506,46 +508,112 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "already_confirmed": False,
         })
 
-    # ---- ebook: Kindle-style reader + upload admin (single book) ----
+    # ---- ebook: Kindle-style reader over a small library + upload admin ----
 
-    ebook_path = None
+    library_root = None
     if settings.db_path and settings.db_path != ":memory:":
-        ebook_path = str(Path(settings.db_path).resolve().with_name("ebook_millsandgoons.json"))
-    ebook = EbookStore(ebook_path)
+        library_root = str(Path(settings.db_path).resolve().with_name("ebooks"))
+    library = Library(library_root)
+    if library_root:
+        library.migrate_single_book(
+            str(Path(settings.db_path).resolve().with_name("ebook_millsandgoons.json")))
 
     @app.get("/millsandgoons", response_class=HTMLResponse)
-    def ebook_reader(request: Request):
-        book = ebook.load() or {}
+    def ebook_library(request: Request):
+        return templates.TemplateResponse(request, "ebook_library.html",
+                                          {"books": library.books()})
+
+    @app.get("/millsandgoons/b/{slug}", response_class=HTMLResponse)
+    def ebook_reader(request: Request, slug: str):
+        book = library.get(slug)
+        if not book:
+            raise HTTPException(404, "No such book")
+        blocks, chapters = prepare(book.get("blocks", []))
         return templates.TemplateResponse(request, "ebook_reader.html", {
-            "title": book.get("title", "Mills & Goons"),
-            "chapters": parse_chapters(book.get("text", "")),
+            "slug": slug, "title": book.get("title", ""),
+            "author": book.get("author", ""),
+            "blocks": blocks, "chapters": chapters,
         })
 
-    def _ebook_admin_ctx(request: Request, flash: str | None = None):
-        book = ebook.load() or {}
-        text = book.get("text", "")
-        return {
-            "title": book.get("title", ""), "text": text,
-            "chapters": parse_chapters(text), "words": word_count(text),
-            "flash": flash,
-        }
+    @app.get("/millsandgoons/b/{slug}/media/{name}")
+    def ebook_media(slug: str, name: str):
+        path = library.media_path(slug, name)
+        if path is None:
+            raise HTTPException(404, "No such image")
+        return FileResponse(path, media_type=media_type(name) or "application/octet-stream",
+                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    # -- admin
+
+    async def _content_from_form(upload: UploadFile | None, text: str,
+                                 book: dict | None = None):
+        """(blocks, media) from an upload, else from the textarea. Returns
+        (None, None) when neither was supplied — a metadata-only edit."""
+        if upload is not None and upload.filename:
+            data = await upload.read()
+            if not data:
+                raise HTTPException(400, "Uploaded file is empty")
+            try:
+                return parse_upload(upload.filename, data)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        if text.strip():
+            known = {b["x"] for b in (book or {}).get("blocks", []) if b.get("t") == "img"}
+            return parse_text_with_images(text, known), None
+        return None, None
 
     @app.get("/millsandgoonsadmin", response_class=HTMLResponse)
     def ebook_admin(request: Request):
-        return templates.TemplateResponse(request, "ebook_admin.html",
-                                          _ebook_admin_ctx(request))
+        return templates.TemplateResponse(request, "ebook_admin.html", {
+            "books": library.books(), "flash": request.query_params.get("flash"),
+        })
 
-    @app.post("/millsandgoonsadmin", response_class=HTMLResponse)
-    async def ebook_admin_save(request: Request, title: str = Form(""),
+    @app.post("/millsandgoonsadmin")
+    async def ebook_admin_add(title: str = Form(""), author: str = Form(""),
+                              text: str = Form(""),
+                              bookfile: UploadFile | None = File(None)):
+        blocks, media = await _content_from_form(bookfile, text)
+        if not blocks:
+            raise HTTPException(400, "Give the book some text, or upload a .docx/.txt")
+        if not title.strip():
+            heading = next((b["x"] for b in blocks if b["t"] == "h"), "")
+            title = heading or (bookfile.filename.rsplit(".", 1)[0]
+                                if bookfile and bookfile.filename else "Untitled")
+        slug = library.unique_slug(title)
+        library.save(slug, title, author, blocks, media or {})
+        return RedirectResponse(f"/millsandgoonsadmin?flash=Added+%E2%80%9C{quote(title)}%E2%80%9D",
+                                status_code=303)
+
+    @app.get("/millsandgoonsadmin/b/{slug}", response_class=HTMLResponse)
+    def ebook_admin_edit(request: Request, slug: str):
+        book = library.get(slug)
+        if not book:
+            raise HTTPException(404, "No such book")
+        blocks = book.get("blocks", [])
+        return templates.TemplateResponse(request, "ebook_admin_edit.html", {
+            "book": book, "text": blocks_to_text(blocks),
+            "words": word_count(blocks), "images": image_count(blocks),
+            "chapters": [b["x"] for b in blocks if b.get("t") == "h"],
+            "flash": request.query_params.get("flash"),
+        })
+
+    @app.post("/millsandgoonsadmin/b/{slug}")
+    async def ebook_admin_save(slug: str, title: str = Form(""), author: str = Form(""),
                                text: str = Form(""),
-                               textfile: UploadFile | None = File(None)):
-        if textfile is not None and textfile.filename:
-            text = (await textfile.read()).decode("utf-8", errors="replace")
-        if not text.strip():
-            raise HTTPException(400, "Book text is empty")
-        ebook.save(title, text)
-        return templates.TemplateResponse(request, "ebook_admin.html",
-                                          _ebook_admin_ctx(request, flash="Book saved."))
+                               bookfile: UploadFile | None = File(None)):
+        book = library.get(slug)
+        if not book:
+            raise HTTPException(404, "No such book")
+        blocks, media = await _content_from_form(bookfile, text, book)
+        library.save(slug, title or book["title"], author,
+                     blocks if blocks is not None else book.get("blocks", []),
+                     media, added=book.get("added"))
+        return RedirectResponse(f"/millsandgoonsadmin/b/{slug}?flash=Saved.", status_code=303)
+
+    @app.post("/millsandgoonsadmin/b/{slug}/delete")
+    def ebook_admin_delete(slug: str):
+        library.delete(slug)
+        return RedirectResponse("/millsandgoonsadmin?flash=Deleted.", status_code=303)
 
     return app
 

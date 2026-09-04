@@ -7,7 +7,7 @@
 <title>{{ title }}</title>
 <style>
   :root {
-    --fs: 19px;
+    --fs: 19px; --pageh: 100vh;
     --bg:#faf7f0; --fg:#1b1b1b; --dim:#8a8477; --line:#e4dfd4;
     --panel:#fffdf8; --accent:#c86f2c;
   }
@@ -56,7 +56,19 @@
   #content h2:first-child { break-before:auto; }
   #content h1 {
     font-size:1.6em; font-weight:normal; text-align:center; text-indent:0;
-    margin:30vh 0 .4em; letter-spacing:.05em; break-after:column;
+    margin:26vh 0 .3em; letter-spacing:.05em;
+  }
+  #content .byline {
+    text-align:center; text-indent:0; font-size:.9em; color:var(--dim);
+    margin:0 0 1em; break-after:column;
+  }
+  /* images keep their place in the flow and never overflow a page */
+  #content figure {
+    margin:1.2em 0; text-align:center; text-indent:0; break-inside:avoid;
+  }
+  #content figure img {
+    max-width:100%; max-height:calc(var(--pageh) * .8);
+    height:auto; border-radius:2px;
   }
 
   /* ---- tiny always-on progress line ---- */
@@ -86,9 +98,9 @@
   }
   .iconbtn {
     background:none; border:1px solid var(--line); color:var(--fg);
-    border-radius:8px; padding:7px 12px; font:14px system-ui, sans-serif; cursor:pointer;
+    border-radius:8px; padding:7px 12px; font:14px system-ui, sans-serif;
+    cursor:pointer; text-decoration:none; display:inline-block;
   }
-  .iconbtn.active { border-color:var(--accent); color:var(--accent); }
 
   /* ---- slide-up panels ---- */
   .panel {
@@ -134,28 +146,27 @@
 </head>
 <body>
 
-{% if not chapters %}
+{% if not blocks %}
 <div id="empty">
   <div style="font-size:2em">📖</div>
-  <div>No book yet.</div>
-  <div>Upload the text on the <a href="/millsandgoonsadmin">admin page</a>.</div>
+  <div>This book has no text yet.</div>
+  <div><a href="/millsandgoons">← Library</a></div>
 </div>
 {% else %}
 
 <div id="viewport">
   <div id="window">
     <div id="content">
-      <h1 data-i="0">{{ title }}</h1>
-      {%- set ns = namespace(i=1) -%}
-      {%- for ch in chapters -%}
-        {%- if ch.title -%}
-          <h2 data-i="{{ ns.i }}" data-ch="{{ loop.index0 }}">{{ ch.title }}</h2>
-          {%- set ns.i = ns.i + 1 -%}
+      <h1>{{ title }}</h1>
+      {% if author %}<p class="byline">{{ author }}</p>{% endif %}
+      {%- for b in blocks -%}
+        {%- if b.t == "h" -%}
+          <h2 data-i="{{ b.i }}" data-ch="{{ b.ch }}">{{ b.x }}</h2>
+        {%- elif b.t == "img" -%}
+          <figure data-i="{{ b.i }}"><img src="/millsandgoons/b/{{ slug }}/media/{{ b.x }}" alt=""></figure>
+        {%- else -%}
+          <p data-i="{{ b.i }}"{% if loop.first %} class="first"{% endif %}>{{ b.x }}</p>
         {%- endif -%}
-        {%- for p in ch.paragraphs -%}
-          <p data-i="{{ ns.i }}"{% if not ch.title and loop.first %} data-ch="{{ loop.index0 }}"{% endif %}{% if loop.first %} class="first"{% endif %}>{{ p }}</p>
-          {%- set ns.i = ns.i + 1 -%}
-        {%- endfor -%}
       {%- endfor -%}
     </div>
   </div>
@@ -165,16 +176,19 @@
 
 <div id="chrome">
   <div id="topbar">
+    <a class="iconbtn" href="/millsandgoons">☰</a>
     <div class="title">{{ title }}</div>
-    <button class="iconbtn" id="tocBtn">Chapters</button>
+    {% if chapters %}<button class="iconbtn" id="tocBtn">Chapters</button>{% endif %}
     <button class="iconbtn" id="aaBtn">Aa</button>
   </div>
+  {% if chapters %}
   <div class="panel" id="toc">
     <h3>Chapters</h3>
     {%- for ch in chapters %}
-    <a href="#" data-ch="{{ loop.index0 }}">{{ ch.title or "Beginning" }}</a>
+    <a href="#" data-ch="{{ loop.index0 }}">{{ ch.title }}</a>
     {%- endfor %}
   </div>
+  {% endif %}
   <div class="panel" id="aa">
     <h3>Display</h3>
     <div class="row">
@@ -192,6 +206,7 @@
 
 <script>
 (function () {
+  var SLUG = {{ slug|tojson }};
   var content = document.getElementById('content');
   var winEl = document.getElementById('window');
   var chrome_ = document.getElementById('chrome');
@@ -200,7 +215,8 @@
   var progCh = document.getElementById('progCh');
   var progPct = document.getElementById('progPct');
 
-  var LS = { fs:'mg_fs', theme:'mg_theme', pos:'mg_pos' };
+  // Size and theme are shared across the library; position is per book.
+  var LS = { fs:'mg_fs', theme:'mg_theme', pos:'mg_pos_' + SLUG, pct:'mg_pct_' + SLUG };
   var GAP = 44, FS_MIN = 13, FS_MAX = 34;
   var page = 0, pages = 1, pw = 0, step = 0;
   var blocks = content.querySelectorAll('[data-i]');
@@ -223,7 +239,6 @@
   /* ---- font size ---- */
   var fs = parseFloat(lsGet(LS.fs)) || 19;
   fs = Math.min(FS_MAX, Math.max(FS_MIN, fs));
-
   function applyFs(v) {
     document.documentElement.style.setProperty('--fs', v.toFixed(1) + 'px');
   }
@@ -235,6 +250,7 @@
     step = pw + GAP;
     content.style.columnWidth = pw + 'px';
     content.style.width = pw + 'px';
+    document.documentElement.style.setProperty('--pageh', winEl.clientHeight + 'px');
     pages = Math.max(1, Math.round((content.scrollWidth + GAP) / step));
   }
 
@@ -275,36 +291,35 @@
   function updateProgress() {
     var pct = pages > 1 ? Math.round(page / (pages - 1) * 100) : 100;
     progPct.textContent = pct + '%';
-    var name = '';
+    lsSet(LS.pct, String(pct));
     var left = page * step + 4;
+    var name = '', cur = -1;
     for (var i = 0; i < headings.length; i++) {
-      if (headings[i].offsetLeft <= left) name = headings[i].tagName === 'H2'
-        ? headings[i].textContent : '';
+      if (headings[i].offsetLeft <= left) { name = headings[i].textContent; cur = i; }
       else break;
     }
     progCh.textContent = name;
-    var cur = -1;
-    for (var j = 0; j < headings.length; j++)
-      if (headings[j].offsetLeft <= left) cur = j;
     document.querySelectorAll('#toc a').forEach(function (a) {
       a.classList.toggle('now', +a.dataset.ch === cur);
     });
   }
 
   /* ---- chrome / panels ---- */
-  function closePanels() { toc.classList.remove('open'); aa.classList.remove('open'); }
+  function closePanels() { if (toc) toc.classList.remove('open'); aa.classList.remove('open'); }
   function toggleChrome(force) {
     var open = force !== undefined ? force : !chrome_.classList.contains('open');
     chrome_.classList.toggle('open', open);
     if (!open) closePanels();
   }
-  document.getElementById('tocBtn').addEventListener('click', function () {
+  var tocBtn = document.getElementById('tocBtn');
+  if (tocBtn) tocBtn.addEventListener('click', function () {
     aa.classList.remove('open'); toc.classList.toggle('open');
   });
   document.getElementById('aaBtn').addEventListener('click', function () {
-    toc.classList.remove('open'); aa.classList.toggle('open');
+    if (toc) toc.classList.remove('open');
+    aa.classList.toggle('open');
   });
-  toc.addEventListener('click', function (e) {
+  if (toc) toc.addEventListener('click', function (e) {
     var a = e.target.closest('a'); if (!a) return;
     e.preventDefault();
     var h = content.querySelector('[data-ch="' + a.dataset.ch + '"]');
@@ -412,15 +427,21 @@
   });
 
   /* ---- boot ---- */
+  function settle() {
+    var a = anchorIndex();
+    repaginate(a);
+  }
   paginate();
   var saved = parseInt(lsGet(LS.pos), 10);
   goTo(isNaN(saved) ? 0 : pageOf(blockByIndex(saved)), false);
-  // Fonts finishing loading can reflow; settle once more.
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(function () {
-      var a = anchorIndex(); repaginate(a);
-    });
-  }
+  // Images and webfonts land after first paint and reflow the columns.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
+  var imgs = content.querySelectorAll('img'), left = imgs.length;
+  imgs.forEach(function (img) {
+    if (img.complete) { if (--left === 0) settle(); return; }
+    img.addEventListener('load', function () { if (--left === 0) settle(); });
+    img.addEventListener('error', function () { if (--left === 0) settle(); });
+  });
 })();
 </script>
 {% endif %}

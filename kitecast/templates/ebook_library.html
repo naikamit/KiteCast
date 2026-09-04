@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Library</title>
+<style>
+  :root {
+    --bg:#faf7f0; --fg:#1b1b1b; --dim:#8a8477; --line:#e4dfd4;
+    --panel:#fffdf8; --accent:#c86f2c;
+  }
+  :root[data-theme="dark"] {
+    --bg:#111214; --fg:#cfcbc2; --dim:#6d6a63; --line:#2a2b2e;
+    --panel:#1a1b1e; --accent:#d98e4a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#111214; --fg:#cfcbc2; --dim:#6d6a63; --line:#2a2b2e;
+      --panel:#1a1b1e; --accent:#d98e4a;
+    }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding:0 0 3rem;
+  }
+  header {
+    display:flex; align-items:center; gap:10px;
+    padding:calc(14px + env(safe-area-inset-top)) 18px 12px;
+  }
+  header h1 {
+    flex:1; margin:0; font-size:1.05rem; letter-spacing:.02em;
+    font-family:Georgia, serif; font-weight:normal;
+  }
+  .themetoggle {
+    background:none; border:1px solid var(--line); color:var(--dim);
+    border-radius:8px; padding:6px 10px; font:13px system-ui; cursor:pointer;
+  }
+  .shelf {
+    display:grid; gap:14px 14px; padding:4px 18px;
+    grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .book { text-decoration:none; color:inherit; display:block; }
+  .cover {
+    position:relative; aspect-ratio:2/3; border-radius:6px; overflow:hidden;
+    background:var(--panel); border:1px solid var(--line);
+    box-shadow:0 2px 8px rgba(0,0,0,.12);
+    display:flex; align-items:center; justify-content:center; padding:14px;
+  }
+  .cover img { width:100%; height:100%; object-fit:cover; position:absolute; inset:0; }
+  .cover .lettering {
+    font-family:Georgia, serif; font-size:1.05rem; line-height:1.3;
+    text-align:center; color:var(--fg); overflow:hidden;
+  }
+  .cover .spine { position:absolute; left:0; top:0; bottom:0; width:5px;
+                  background:var(--accent); opacity:.75; }
+  .bar { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(0,0,0,.1); }
+  .bar i { display:block; height:100%; background:var(--accent); width:0; }
+  .meta { margin:8px 2px 0; }
+  .meta .t { font-size:.88rem; line-height:1.3; }
+  .meta .a { font-size:.76rem; color:var(--dim); margin-top:2px; }
+  .meta .p { font-size:.7rem; color:var(--accent); margin-top:3px; }
+  .empty { color:var(--dim); text-align:center; padding:5rem 2rem; }
+  .empty a { color:var(--accent); }
+  footer { text-align:center; margin-top:2.5rem; }
+  footer a { color:var(--dim); font-size:.78rem; text-decoration:none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Library</h1>
+  <button class="themetoggle" id="themeToggle">Theme</button>
+</header>
+
+{% if not books %}
+  <div class="empty">
+    <div style="font-size:2em">📚</div>
+    <p>No books yet.<br><a href="/millsandgoonsadmin">Add one in the admin panel →</a></p>
+  </div>
+{% else %}
+  <div class="shelf">
+    {% for b in books %}
+    <a class="book" href="/millsandgoons/b/{{ b.slug }}" data-slug="{{ b.slug }}">
+      <div class="cover">
+        <span class="spine"></span>
+        {% if b.cover %}
+          <img src="/millsandgoons/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
+        {% else %}
+          <span class="lettering">{{ b.title }}</span>
+        {% endif %}
+        <span class="bar"><i></i></span>
+      </div>
+      <div class="meta">
+        <div class="t">{{ b.title }}</div>
+        {% if b.author %}<div class="a">{{ b.author }}</div>{% endif %}
+        <div class="p"></div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<footer><a href="/millsandgoonsadmin">admin</a></footer>
+
+<script>
+(function () {
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  var t = lsGet('mg_theme');
+  if (t) document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    var dark = getComputedStyle(document.body).backgroundColor === 'rgb(17, 18, 20)';
+    var next = dark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    lsSet('mg_theme', next);
+  });
+
+  // Reading progress each book left behind in this browser.
+  document.querySelectorAll('.book').forEach(function (a) {
+    var pct = parseInt(lsGet('mg_pct_' + a.dataset.slug), 10);
+    if (isNaN(pct) || pct <= 0) return;
+    a.querySelector('.bar i').style.width = Math.min(100, pct) + '%';
+    a.querySelector('.meta .p').textContent = pct >= 99 ? 'Finished' : pct + '% read';
+  });
+})();
+</script>
+</body>
+</html>
