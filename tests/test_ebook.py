@@ -240,6 +240,14 @@ def test_library_page_empty_then_populated(client):
     assert '/millsandgoons/b/mills-goons"' in r.text
 
 
+def test_reader_pages_never_link_to_the_admin_panel(client):
+    """The admin URL is the only thing keeping strangers out — no page a
+    reader can reach may advertise it."""
+    client.post("/millsandgoonsadmin", data={"title": "Mills & Goons", "text": SAMPLE})
+    for url in ("/millsandgoons", "/millsandgoons/b/mills-goons"):
+        assert "millsandgoonsadmin" not in client.get(url).text, url
+
+
 def test_reader_renders_text_and_chapters(client):
     client.post("/millsandgoonsadmin", data={"title": "Mills & Goons", "text": SAMPLE})
     r = client.get("/millsandgoons/b/mills-goons")

@@ -63,9 +63,6 @@
   .meta .a { font-size:.76rem; color:var(--dim); margin-top:2px; }
   .meta .p { font-size:.7rem; color:var(--accent); margin-top:3px; }
   .empty { color:var(--dim); text-align:center; padding:5rem 2rem; }
-  .empty a { color:var(--accent); }
-  footer { text-align:center; margin-top:2.5rem; }
-  footer a { color:var(--dim); font-size:.78rem; text-decoration:none; }
 </style>
 </head>
 <body>
@@ -78,7 +75,7 @@
 {% if not books %}
   <div class="empty">
     <div style="font-size:2em">📚</div>
-    <p>No books yet.<br><a href="/millsandgoonsadmin">Add one in the admin panel →</a></p>
+    <p>No books yet.</p>
   </div>
 {% else %}
   <div class="shelf">
@@ -102,8 +99,6 @@
     {% endfor %}
   </div>
 {% endif %}
-
-<footer><a href="/millsandgoonsadmin">admin</a></footer>
 
 <script>
 (function () {
