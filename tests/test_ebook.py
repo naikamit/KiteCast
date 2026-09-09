@@ -9,9 +9,9 @@ from fastapi.testclient import TestClient
 
 from kitecast.app import build_app
 from kitecast.config import settings as app_settings
-from kitecast.ebook import (Library, blocks_to_text, parse_docx, parse_text,
-                            parse_text_with_images, parse_upload, prepare, slugify,
-                            word_count)
+from kitecast.ebook import (Library, blocks_to_text, code_matches, new_code, parse_docx,
+                            parse_text, parse_text_with_images, parse_upload, prepare,
+                            slugify, split_free, word_count)
 
 # 1x1 pixels, enough for a real image byte-stream through the whole path.
 PNG = base64.b64decode(
@@ -308,3 +308,142 @@ def test_admin_rejects_empty_and_unsupported(client):
     r = client.post("/millsandgoonsadmin", data={"title": "T"},
                     files={"bookfile": ("book.pdf", b"%PDF-", "application/pdf")})
     assert r.status_code == 400
+
+# ---------------------------------------------------------------- paywall
+
+GATED = ("Chapter 1\n\nFree words here.\n\nChapter 2\n\nPaid words here.\n\n"
+         "Chapter 3\n\nMore paid words.")
+
+
+def test_split_free_cuts_at_the_chapter_boundary():
+    blocks = parse_text(GATED)
+    free, locked = split_free(blocks, 1)
+    assert [b["x"] for b in free] == ["Chapter 1", "Free words here."]
+    assert locked == ["Chapter 2", "Chapter 3"]
+
+    # front matter before the first heading stays with the free part
+    front = parse_text("A note before we start.\n\n" + GATED)
+    free, locked = split_free(front, 1)
+    assert free[0]["x"] == "A note before we start."
+    assert locked == ["Chapter 2", "Chapter 3"]
+
+
+def test_split_free_no_gate_cases():
+    blocks = parse_text(GATED)
+    assert split_free(blocks, 0) == (blocks, [])      # 0 = whole book free
+    assert split_free(blocks, 3) == (blocks, [])      # allowance covers the book
+    assert split_free(blocks, 9) == (blocks, [])
+    assert split_free(parse_text("No headings at all."), 1)[1] == []
+
+
+def test_codes_are_unambiguous_and_compared_loosely():
+    code = new_code()
+    assert len(code) == 6 and set(code) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+    assert code_matches(f"  {code.lower()} ", code)
+    assert not code_matches("", code) and not code_matches(code, "")
+    assert not code_matches("ZZZZZZ", code)
+
+
+def test_library_keeps_paywall_fields_across_metadata_edits(tmp_path):
+    lib = Library(str(tmp_path / "ebooks"))
+    blocks = parse_text(GATED)
+    lib.save("g", "G", "", blocks, {}, free_chapters=1, terms="Rs 199")
+    code = lib.get("g")["code"]
+    assert code and lib.get("g")["free_chapters"] == 1
+
+    lib.save("g", "G2", "", blocks, None)              # rename only
+    book = lib.get("g")
+    assert (book["free_chapters"], book["terms"], book["code"]) == (1, "Rs 199", code)
+
+    lib.save("g", "G2", "", blocks, None, code=new_code())
+    assert lib.get("g")["code"] != code
+
+
+def test_library_settings_default_to_the_telegram_handle(tmp_path):
+    lib = Library(str(tmp_path / "ebooks"))
+    assert lib.settings() == {"telegram": "onepunchcall", "terms": ""}
+    lib.save_settings("@someoneelse", "  Pay me  ")
+    assert lib.settings() == {"telegram": "someoneelse", "terms": "Pay me"}
+    lib.save_settings("", "x")
+    assert lib.settings()["telegram"] == "onepunchcall"
+
+    # a book's own terms win over the library default
+    lib.save_settings("onepunchcall", "library terms")
+    assert lib.unlock_terms({"terms": ""}) == "library terms"
+    assert lib.unlock_terms({"terms": "book terms"}) == "book terms"
+
+
+def _add_gated_book(client, free=1, terms="Rs 199 for the rest."):
+    client.post("/millsandgoonsadmin", data={"title": "Gated", "text": GATED,
+                                             "free_chapters": free, "terms": terms})
+    return client.get("/millsandgoonsadmin").text
+
+
+def test_paid_chapters_never_reach_an_unpaid_browser(client):
+    _add_gated_book(client)
+    page = client.get("/millsandgoons/b/gated").text
+    assert "Free words here." in page
+    assert "Paid words here." not in page and "More paid words." not in page
+    # the gate names what's behind it, and points at Telegram
+    assert "Chapter 2" in page and "https://t.me/onepunchcall" in page
+    assert "Rs 199 for the rest." in page
+    assert "2 more chapters behind this" in page
+
+
+def test_unlock_with_the_code_opens_the_whole_book(client):
+    _add_gated_book(client)
+    code = [ln for ln in client.get("/millsandgoonsadmin").text.splitlines()
+            if "code <b>" in ln][0].split("<b>")[1].split("</b>")[0]
+
+    bad = client.post("/millsandgoons/b/gated/unlock", data={"code": "WRONG1"},
+                      follow_redirects=False)
+    assert bad.status_code == 303 and bad.headers["location"].endswith("?bad=1")
+    assert "mg_unlock_gated" not in bad.headers.get("set-cookie", "")
+    assert "Paid words here." not in client.get("/millsandgoons/b/gated").text
+
+    ok = client.post("/millsandgoons/b/gated/unlock", data={"code": code.lower()})
+    assert ok.status_code == 200
+    page = client.get("/millsandgoons/b/gated").text
+    assert "Paid words here." in page and "More paid words." in page
+    assert "Unlock on Telegram" not in page          # gate is gone
+
+
+def test_a_forged_cookie_does_not_unlock(client):
+    _add_gated_book(client)
+    client.cookies.set("mg_unlock_gated", "AAAAAA")
+    assert "Paid words here." not in client.get("/millsandgoons/b/gated").text
+    client.cookies.clear()
+
+
+def test_shelf_marks_gated_books_locked(client):
+    _add_gated_book(client)
+    client.post("/millsandgoonsadmin", data={"title": "Open", "text": GATED,
+                                             "free_chapters": 0})
+    shelf = client.get("/millsandgoons").text
+    assert shelf.count("free</span>") == 1           # only the gated one is chipped
+
+
+def test_admin_settings_and_regenerated_code(client):
+    _add_gated_book(client)
+    client.post("/millsandgoonsadmin/settings",
+                data={"telegram": "@otherhandle", "terms": "Library terms"})
+    assert "https://t.me/otherhandle" in client.get("/millsandgoons/b/gated").text
+
+    before = client.get("/millsandgoonsadmin/b/gated").text
+    old_code = before.split('class="code">')[1].split("<")[0]
+    client.post("/millsandgoonsadmin/b/gated",
+                data={"title": "Gated", "free_chapters": 1, "regenerate": "1"})
+    after = client.get("/millsandgoonsadmin/b/gated").text
+    assert after.split('class="code">')[1].split("<")[0] != old_code
+
+
+def test_book_terms_override_library_terms(client):
+    client.post("/millsandgoonsadmin/settings",
+                data={"telegram": "onepunchcall", "terms": "Library terms"})
+    client.post("/millsandgoonsadmin", data={"title": "Gated", "text": GATED,
+                                             "free_chapters": 1, "terms": ""})
+    assert "Library terms" in client.get("/millsandgoons/b/gated").text
+    client.post("/millsandgoonsadmin/b/gated",
+                data={"title": "Gated", "free_chapters": 1, "terms": "Just this book"})
+    page = client.get("/millsandgoons/b/gated").text
+    assert "Just this book" in page and "Library terms" not in page

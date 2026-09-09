@@ -71,6 +71,42 @@
     height:auto; border-radius:2px;
   }
 
+  /* ---- the paywall gate: its own full page at the end of the free text ---- */
+  #content .gate {
+    break-before:column; height:var(--pageh); text-indent:0; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:.75em; padding:0 4%; font-family:system-ui, -apple-system, sans-serif;
+  }
+  .gate .lock { font-size:1.6em; opacity:.8; }
+  .gate h3 { margin:0; font-family:Georgia, serif; font-weight:normal;
+             font-size:1.25em; letter-spacing:.03em; }
+  .gate .next { margin:0; font-size:.82em; color:var(--dim); }
+  .gate .terms {
+    margin:.2em 0; padding:.85em 1em; border:1px solid var(--line);
+    border-left:3px solid var(--accent); border-radius:8px; background:var(--panel);
+    font-size:.85em; line-height:1.5; text-align:left; white-space:pre-wrap;
+    max-width:32em; max-height:34vh; overflow-y:auto; touch-action:pan-y;
+  }
+  .gate .unlock {
+    display:inline-block; background:var(--accent); color:#fff; text-decoration:none;
+    padding:.75em 1.6em; border-radius:99px; font-size:.95em; font-weight:600;
+  }
+  .gate form { display:flex; gap:.4em; width:100%; max-width:19em; }
+  .gate input {
+    flex:1; min-width:0; padding:.6em .7em; border:1px solid var(--line);
+    border-radius:8px; background:var(--bg); color:var(--fg);
+    font:inherit; font-size:.9em; text-align:center; letter-spacing:.14em;
+    text-transform:uppercase; user-select:text; -webkit-user-select:text;
+  }
+  .gate input::placeholder { text-transform:none; letter-spacing:normal; color:var(--dim); }
+  .gate button {
+    padding:.6em 1em; border:1px solid var(--line); border-radius:8px;
+    background:none; color:var(--fg); font:inherit; font-size:.85em; cursor:pointer;
+  }
+  .gate .err { margin:0; font-size:.8em; color:#d9534f; }
+  .gate .rest { margin:0; font-size:.75em; color:var(--dim); }
+  #toc a.locked { color:var(--dim); }
+
   /* ---- tiny always-on progress line ---- */
   #progress {
     position:fixed; left:0; right:0;
@@ -168,6 +204,23 @@
           <p data-i="{{ b.i }}"{% if loop.first %} class="first"{% endif %}>{{ b.x }}</p>
         {%- endif -%}
       {%- endfor -%}
+      {%- if locked_titles %}
+      <section class="gate">
+        <div class="lock">🔒</div>
+        <h3>Continue reading</h3>
+        <p class="next">Next up — {{ locked_titles[0] }}</p>
+        {% if terms %}<div class="terms">{{ terms }}</div>{% endif %}
+        <a class="unlock gate-ui" href="https://t.me/{{ telegram }}"
+           target="_blank" rel="noopener">Unlock on Telegram</a>
+        <form class="gate-ui" method="post" action="/millsandgoons/b/{{ slug }}/unlock">
+          <input name="code" placeholder="unlock code" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false" maxlength="24">
+          <button type="submit">Unlock</button>
+        </form>
+        {% if bad_code %}<p class="err">That code didn't work — try again.</p>{% endif %}
+        <p class="rest">{{ locked_titles|length }} more chapter{{ 's' if locked_titles|length != 1 }} behind this</p>
+      </section>
+      {%- endif %}
     </div>
   </div>
 </div>
@@ -178,14 +231,17 @@
   <div id="topbar">
     <a class="iconbtn" href="/millsandgoons">☰</a>
     <div class="title">{{ title }}</div>
-    {% if chapters %}<button class="iconbtn" id="tocBtn">Chapters</button>{% endif %}
+    {% if chapters or locked_titles %}<button class="iconbtn" id="tocBtn">Chapters</button>{% endif %}
     <button class="iconbtn" id="aaBtn">Aa</button>
   </div>
-  {% if chapters %}
+  {% if chapters or locked_titles %}
   <div class="panel" id="toc">
     <h3>Chapters</h3>
     {%- for ch in chapters %}
     <a href="#" data-ch="{{ loop.index0 }}">{{ ch.title }}</a>
+    {%- endfor %}
+    {%- for t in locked_titles %}
+    <a class="locked" href="#" data-gate="1">🔒 {{ t }}</a>
     {%- endfor %}
   </div>
   {% endif %}
@@ -219,6 +275,7 @@
   var LS = { fs:'mg_fs', theme:'mg_theme', pos:'mg_pos_' + SLUG, pct:'mg_pct_' + SLUG };
   var GAP = 44, FS_MIN = 13, FS_MAX = 34;
   var page = 0, pages = 1, pw = 0, step = 0;
+  var gate = content.querySelector('.gate');
   var blocks = content.querySelectorAll('[data-i]');
   var headings = content.querySelectorAll('[data-ch]');
 
@@ -283,13 +340,18 @@
     return blocks[0];
   }
 
+  function onGate() { return !!gate && page >= pages - 1; }
+
   function repaginate(anchor) {
+    var wasOnGate = onGate();      // resizing while the keyboard is up, say
     paginate();
-    goTo(pageOf(blockByIndex(anchor)), false);
+    goTo(wasOnGate ? pages - 1 : pageOf(blockByIndex(anchor)), false);
   }
 
   function updateProgress() {
-    var pct = pages > 1 ? Math.round(page / (pages - 1) * 100) : 100;
+    // With a gate on the end, the last real page — not the gate — is 100%.
+    var last = Math.max(1, pages - (gate ? 2 : 1));
+    var pct = Math.min(100, Math.round(page / last * 100));
     progPct.textContent = pct + '%';
     lsSet(LS.pct, String(pct));
     var left = page * step + 4;
@@ -322,8 +384,11 @@
   if (toc) toc.addEventListener('click', function (e) {
     var a = e.target.closest('a'); if (!a) return;
     e.preventDefault();
-    var h = content.querySelector('[data-ch="' + a.dataset.ch + '"]');
-    if (h) goTo(pageOf(h), false);
+    if (a.dataset.gate) goTo(pages - 1, false);
+    else {
+      var h = content.querySelector('[data-ch="' + a.dataset.ch + '"]');
+      if (h) goTo(pageOf(h), false);
+    }
     toggleChrome(false);
   });
 
@@ -352,7 +417,12 @@
     return Math.hypot(dx, dy);
   }
 
+  // The link, the code box and its button own their taps; everything else
+  // in the viewport is page-turning surface.
+  function isGateUI(target) { return !!(target && target.closest && target.closest('.gate-ui')); }
+
   vp.addEventListener('touchstart', function (e) {
+    if (isGateUI(e.target)) { t0 = null; return; }
     if (e.touches.length === 2) {
       pinch = { d0: dist(e.touches), fs0: fs, anchor: anchorIndex(), raf: 0 };
       t0 = null;
@@ -363,6 +433,7 @@
   }, { passive: true });
 
   vp.addEventListener('touchmove', function (e) {
+    if (isGateUI(e.target) || (e.target.closest && e.target.closest('.gate .terms'))) return;
     e.preventDefault();
     if (pinch && e.touches.length === 2) {
       var scale = dist(e.touches) / pinch.d0;
@@ -379,6 +450,7 @@
   }, { passive: false });
 
   vp.addEventListener('touchend', function (e) {
+    if (isGateUI(e.target)) return;
     if (pinch) {
       if (e.touches.length === 0) {
         lsSet(LS.fs, String(fs));
@@ -411,6 +483,7 @@
     else if (e.key === 'ArrowLeft') goTo(page - 1, true);
   });
   vp.addEventListener('click', function (e) {
+    if (isGateUI(e.target)) return;
     if ('ontouchstart' in window) return;
     var x = e.clientX / window.innerWidth;
     if (chrome_.classList.contains('open')) { toggleChrome(false); return; }
@@ -433,7 +506,8 @@
   }
   paginate();
   var saved = parseInt(lsGet(LS.pos), 10);
-  goTo(isNaN(saved) ? 0 : pageOf(blockByIndex(saved)), false);
+  if ({{ 'true' if bad_code else 'false' }} && gate) goTo(pages - 1, false);
+  else goTo(isNaN(saved) ? 0 : pageOf(blockByIndex(saved)), false);
   // Images and webfonts land after first paint and reflow the columns.
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
   var imgs = content.querySelectorAll('img'), left = imgs.length;

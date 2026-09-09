@@ -62,7 +62,7 @@
           <div class="t">{{ b.title }}</div>
           <div class="s">
             {% if b.author %}{{ b.author }} · {% endif %}{{ "{:,}".format(b.words) }} words
-            · {{ b.chapters }} chapter{{ 's' if b.chapters != 1 }}{% if b.images %} · {{ b.images }} image{{ 's' if b.images != 1 }}{% endif %}
+            · {{ b.chapters }} chapter{{ 's' if b.chapters != 1 }}{% if b.images %} · {{ b.images }} image{{ 's' if b.images != 1 }}{% endif %}{% if b.gated %} · 🔒 {{ b.free_chapters }} free · code <b>{{ b.code }}</b>{% endif %}
           </div>
         </span>
         <a class="edit" href="/millsandgoonsadmin/b/{{ b.slug }}">edit</a>
@@ -70,6 +70,25 @@
       </div>
       {% endfor %}
     {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Payment</h2>
+    <form method="post" action="/millsandgoonsadmin/settings">
+      <label for="telegram">Telegram handle readers message to pay</label>
+      <input type="text" id="telegram" name="telegram" value="{{ settings.telegram }}"
+             placeholder="onepunchcall">
+      <div class="hint">The <b>Unlock</b> button on the gate opens
+        <code>t.me/{{ settings.telegram }}</code>.</div>
+
+      <label for="terms">Payment terms callout</label>
+      <textarea id="terms" name="terms" style="min-height:8rem"
+                placeholder="₹199 for the rest of the book. UPI to …&#10;Send the screenshot and I'll message your unlock code.">{{ settings.terms }}</textarea>
+      <div class="hint">Shown in the callout on the gate page. A book can override
+        this with its own terms.</div>
+
+      <button type="submit">Save payment settings</button>
+    </form>
   </div>
 
   <div class="card">
@@ -88,6 +107,11 @@
 
       <label for="text">…or paste the full text</label>
       <textarea id="text" name="text" placeholder="Chapter 1&#10;&#10;It was a dark and stormy night…"></textarea>
+
+      <label for="free_chapters">Free chapters</label>
+      <input type="text" inputmode="numeric" id="free_chapters" name="free_chapters" value="0">
+      <div class="hint">0 keeps the whole book free. Any other number locks everything
+        past that many chapters behind the unlock gate.</div>
 
       <button type="submit">Add to library</button>
       <div class="hint">Chapters come from Word heading styles, or from lines like

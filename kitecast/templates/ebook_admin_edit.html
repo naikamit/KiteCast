@@ -32,6 +32,12 @@
   .stats b { color:var(--fg); }
   ol { margin:.5rem 0 0; padding-left:1.4rem; color:var(--dim); font-size:.88rem; }
   .hint { color:var(--dim); font-size:.8rem; margin-top:.5rem; }
+  .hint a { color:var(--dim); }
+  .code { font:1.3rem/1.4 ui-monospace, Menlo, Consolas, monospace; letter-spacing:.22em;
+          color:var(--green); padding:.3rem 0; }
+  .checkline { display:flex; align-items:center; gap:.45rem; color:var(--fg);
+               font-size:.85rem; margin-top:.4rem; }
+  .checkline input { width:auto; }
 </style>
 </head>
 <body>
@@ -72,6 +78,32 @@
       <div class="hint"><code># …</code> lines are chapter headings and
         <code>[image: …]</code> lines are the book's pictures — move them to move the
         picture, delete a line to drop it from the flow.</div>
+
+      <label for="free_chapters">Free chapters</label>
+      <input type="text" inputmode="numeric" id="free_chapters" name="free_chapters"
+             value="{{ book.free_chapters }}">
+      <div class="hint">
+        {% if locked_titles %}
+          Locked right now: {{ locked_titles|join(', ') }}.
+        {% elif book.free_chapters %}
+          Nothing is locked — this book has {{ chapters|length }} chapter{{ 's' if chapters|length != 1 }},
+          so a {{ book.free_chapters }}-chapter allowance covers all of it.
+        {% else %}
+          0 keeps the whole book free.
+        {% endif %}
+      </div>
+
+      <label for="terms">Payment terms for this book</label>
+      <textarea id="terms" name="terms" style="min-height:7rem"
+                placeholder="Leave empty to use the library-wide terms">{{ book.terms }}</textarea>
+      <div class="hint">Empty falls back to the library terms set on the
+        <a class="back" href="/millsandgoonsadmin">admin home</a>. Readers reach you at
+        <code>t.me/{{ settings.telegram }}</code>.</div>
+
+      <label>Unlock code</label>
+      <div class="code">{{ book.code }}</div>
+      <label class="checkline"><input type="checkbox" name="regenerate" value="1">
+        Issue a new code <span class="hint">— everyone using the old one is locked out again</span></label>
 
       <button type="submit">Save changes</button>
     </form>

@@ -15,6 +15,7 @@ flow:
 
 import json
 import re
+import secrets
 import shutil
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -264,6 +265,40 @@ def parse_text_with_images(text: str, known: set[str]) -> list[dict]:
     return blocks
 
 
+
+# ------------------------------------------------------------- paid unlock
+
+# Unambiguous alphabet: no O/0, I/1 — these codes get read out over chat.
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+DEFAULT_TELEGRAM = "onepunchcall"
+
+
+def new_code(length: int = 6) -> str:
+    return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(length))
+
+
+def split_free(blocks: list[dict], free_chapters: int) -> tuple[list[dict], list[str]]:
+    """(blocks a non-paying reader may see, titles of the locked chapters).
+
+    `free_chapters` counts chapters from the top; anything before the first
+    heading is front matter and always free. A book with no more chapters
+    than the allowance isn't gated at all, so nothing is withheld.
+    """
+    if free_chapters <= 0:
+        return blocks, []
+    heads = [i for i, b in enumerate(blocks) if b.get("t") == "h"]
+    if len(heads) <= free_chapters:
+        return blocks, []
+    cut = heads[free_chapters]
+    return blocks[:cut], [blocks[i]["x"] for i in heads[free_chapters:]]
+
+
+def code_matches(given: str, expected: str) -> bool:
+    if not expected or not given:
+        return False
+    return secrets.compare_digest(given.strip().upper(), expected.strip().upper())
+
+
 # ----------------------------------------------------------------- store
 
 class Library:
@@ -275,6 +310,7 @@ class Library:
             self._root.mkdir(parents=True, exist_ok=True)
         self._mem: dict[str, dict] = {}
         self._mem_media: dict[str, dict[str, bytes]] = {}
+        self._mem_settings: dict = {}
 
     # -- paths
 
@@ -320,6 +356,9 @@ class Library:
                 "cover": book.get("cover", ""),
                 "words": word_count(blocks), "images": image_count(blocks),
                 "chapters": sum(1 for b in blocks if b.get("t") == "h"),
+                "free_chapters": book.get("free_chapters", 0),
+                "code": book.get("code", ""),
+                "gated": bool(split_free(blocks, book.get("free_chapters", 0))[1]),
             })
         out.sort(key=lambda b: b["added"], reverse=True)
         return out
@@ -331,17 +370,25 @@ class Library:
     # -- writes
 
     def save(self, slug: str, title: str, author: str, blocks: list[dict],
-             media: dict[str, bytes] | None = None, added: str | None = None) -> str:
+             media: dict[str, bytes] | None = None, added: str | None = None,
+             free_chapters: int | None = None, terms: str | None = None,
+             code: str | None = None) -> str:
         """Write a book. `media` replaces the book's images when given; pass
-        None to leave existing images alone (a metadata-only edit)."""
+        None to leave existing images alone (a metadata-only edit). The
+        paywall fields work the same way — None keeps what's stored."""
         if not _safe_name(slug):
             raise ValueError("Bad book id")
+        old = self.get(slug) or {}
         cover = next((b["x"] for b in blocks if b.get("t") == "img"), "")
         book = {
             "slug": slug, "title": title.strip() or "Untitled",
             "author": author.strip(), "blocks": blocks, "cover": cover,
-            "added": added or (self.get(slug) or {}).get("added")
+            "added": added or old.get("added")
                      or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "free_chapters": max(0, int(old.get("free_chapters", 0)
+                                        if free_chapters is None else free_chapters)),
+            "terms": (old.get("terms", "") if terms is None else terms).strip(),
+            "code": (code or old.get("code") or new_code()).strip().upper(),
         }
         if self._root is None:
             self._mem[slug] = book
@@ -383,6 +430,37 @@ class Library:
             return False
         shutil.rmtree(d, ignore_errors=True)
         return True
+
+    # -- library-wide settings
+
+    def settings(self) -> dict:
+        """Telegram handle to sell through, and the terms shown when a book
+        doesn't set its own."""
+        raw = {}
+        if self._root is None:
+            raw = dict(self._mem_settings)
+        else:
+            try:
+                raw = json.loads((self._root / "settings.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                raw = {}
+        return {"telegram": (raw.get("telegram") or DEFAULT_TELEGRAM).lstrip("@"),
+                "terms": raw.get("terms", "")}
+
+    def save_settings(self, telegram: str, terms: str) -> None:
+        data = {"telegram": (telegram or DEFAULT_TELEGRAM).strip().lstrip("@")
+                            or DEFAULT_TELEGRAM,
+                "terms": terms.strip()}
+        if self._root is None:
+            self._mem_settings = data
+            return
+        tmp = self._root / "settings.json.tmp"
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self._root / "settings.json")
+
+    def unlock_terms(self, book: dict) -> str:
+        """What the gate should say for this book."""
+        return book.get("terms") or self.settings()["terms"]
 
     # -- one-time migration from the original single-book file
 

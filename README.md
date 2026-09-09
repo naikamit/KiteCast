@@ -69,6 +69,17 @@ flow. EMF/WMF drawings are skipped because browsers can't draw them.
 Reading position, text size and theme live in the reader's own browser, not
 on the server.
 
+**Paid unlock.** A book can give away its first N chapters and gate the rest.
+The locked chapters are withheld *server-side* — they never reach an unpaid
+browser, so View Source doesn't defeat the wall. When the reader turns past
+the free text they land on a gate page carrying the payment terms (written in
+admin, per book or library-wide), an **Unlock on Telegram** button opening
+`t.me/<handle>` (default `onepunchcall`), and a box for the unlock code. Each
+book has its own short code, shown in admin and regenerable; entering it sets
+a long-lived cookie and the whole book opens. It's a shared code, not a
+per-reader licence — right-sized for selling by hand over chat, and rotate it
+if it leaks.
+
 ## Setup
 
 1. **Kite Connect app** (developers.kite.trade, ₹500/mo): set the redirect URL

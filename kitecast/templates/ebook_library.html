@@ -57,6 +57,9 @@
   .cover .spine { position:absolute; left:0; top:0; bottom:0; width:5px;
                   background:var(--accent); opacity:.75; }
   .bar { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(0,0,0,.1); }
+  .cover .lock { position:absolute; top:6px; right:6px; background:var(--bg); color:var(--dim);
+                 border:1px solid var(--line); border-radius:99px; padding:2px 7px;
+                 font:10px system-ui, sans-serif; }
   .bar i { display:block; height:100%; background:var(--accent); width:0; }
   .meta { margin:8px 2px 0; }
   .meta .t { font-size:.88rem; line-height:1.3; }
@@ -89,6 +92,7 @@
           <span class="lettering">{{ b.title }}</span>
         {% endif %}
         <span class="bar"><i></i></span>
+        {% if b.locked %}<span class="lock">🔒 {{ b.free_chapters }} free</span>{% endif %}
       </div>
       <div class="meta">
         <div class="t">{{ b.title }}</div>
