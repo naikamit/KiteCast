@@ -72,7 +72,7 @@
 
 <header>
   <h1>Library</h1>
-  <button class="themetoggle" id="themeToggle">Theme</button>
+  <button class="themetoggle" id="themeToggle" aria-label="Switch theme">Dark</button>
 </header>
 
 {% if not books %}
@@ -111,14 +111,33 @@
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
+  var btn = document.getElementById('themeToggle');
+  var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+
+  function isDark() {
+    var set = document.documentElement.getAttribute('data-theme');
+    return set ? set === 'dark' : !!(systemDark && systemDark.matches);
+  }
+
+  // The button names the mode you'll get, not the one you're in.
+  function relabel() {
+    btn.textContent = isDark() ? 'Light' : 'Dark';
+    btn.setAttribute('aria-label', 'Switch to ' + btn.textContent.toLowerCase() + ' mode');
+  }
+
   var t = lsGet('mg_theme');
   if (t) document.documentElement.setAttribute('data-theme', t);
-  document.getElementById('themeToggle').addEventListener('click', function () {
-    var dark = getComputedStyle(document.body).backgroundColor === 'rgb(17, 18, 20)';
-    var next = dark ? 'light' : 'dark';
+  relabel();
+  btn.addEventListener('click', function () {
+    var next = isDark() ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     lsSet('mg_theme', next);
+    relabel();
   });
+  // follow the phone's own switch while no explicit choice is stored
+  if (systemDark && systemDark.addEventListener) {
+    systemDark.addEventListener('change', function () { if (!lsGet('mg_theme')) relabel(); });
+  }
 
   // Reading progress each book left behind in this browser.
   document.querySelectorAll('.book').forEach(function (a) {
