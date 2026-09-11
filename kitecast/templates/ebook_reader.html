@@ -186,7 +186,7 @@
 <div id="empty">
   <div style="font-size:2em">📖</div>
   <div>This book has no text yet.</div>
-  <div><a href="/millsandgoons">← Library</a></div>
+  <div><a href="{{ rb or '/' }}">← Library</a></div>
 </div>
 {% else %}
 
@@ -199,7 +199,7 @@
         {%- if b.t == "h" -%}
           <h2 data-i="{{ b.i }}" data-ch="{{ b.ch }}">{{ b.x }}</h2>
         {%- elif b.t == "img" -%}
-          <figure data-i="{{ b.i }}"><img src="/millsandgoons/b/{{ slug }}/media/{{ b.x }}" alt=""></figure>
+          <figure data-i="{{ b.i }}"><img src="{{ rb }}/b/{{ slug }}/media/{{ b.x }}" alt=""></figure>
         {%- else -%}
           <p data-i="{{ b.i }}"{% if loop.first %} class="first"{% endif %}>{{ b.x }}</p>
         {%- endif -%}
@@ -212,7 +212,7 @@
         {% if terms %}<div class="terms">{{ terms }}</div>{% endif %}
         <a class="unlock gate-ui" href="https://t.me/{{ telegram }}"
            target="_blank" rel="noopener">Unlock on Telegram</a>
-        <form class="gate-ui" method="post" action="/millsandgoons/b/{{ slug }}/unlock">
+        <form class="gate-ui" method="post" action="{{ rb }}/b/{{ slug }}/unlock">
           <input name="code" placeholder="unlock code" autocomplete="off"
                  autocapitalize="characters" spellcheck="false" maxlength="24">
           <button type="submit">Unlock</button>
@@ -229,7 +229,7 @@
 
 <div id="chrome">
   <div id="topbar">
-    <a class="iconbtn" href="/millsandgoons">☰</a>
+    <a class="iconbtn" href="{{ rb or '/' }}">☰</a>
     <div class="title">{{ title }}</div>
     {% if chapters or locked_titles %}<button class="iconbtn" id="tocBtn">Chapters</button>{% endif %}
     <button class="iconbtn" id="aaBtn">Aa</button>

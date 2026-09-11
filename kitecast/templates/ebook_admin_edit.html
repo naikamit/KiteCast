@@ -42,7 +42,7 @@
 </head>
 <body>
 <main>
-  <a class="back" href="/millsandgoonsadmin">← all books</a>
+  <a class="back" href="{{ ab }}">← all books</a>
   <h1>{{ book.title }}</h1>
 
   {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
@@ -52,7 +52,7 @@
       <b>{{ "{:,}".format(words) }}</b> words ·
       <b>{{ chapters|length }}</b> chapter{{ 's' if chapters|length != 1 }} ·
       <b>{{ images }}</b> image{{ 's' if images != 1 }} ·
-      <a class="back" href="/millsandgoons/b/{{ book.slug }}">read →</a>
+      <a class="back" href="{{ rb }}/b/{{ book.slug }}">read →</a>
     </div>
     {% if chapters %}
     <ol>{% for c in chapters %}<li>{{ c }}</li>{% endfor %}</ol>
@@ -60,7 +60,7 @@
   </div>
 
   <div class="card">
-    <form method="post" action="/millsandgoonsadmin/b/{{ book.slug }}" enctype="multipart/form-data">
+    <form method="post" action="{{ ab }}/b/{{ book.slug }}" enctype="multipart/form-data">
       <h2>Edit</h2>
       <label for="title">Title</label>
       <input type="text" id="title" name="title" value="{{ book.title }}">
@@ -97,7 +97,7 @@
       <textarea id="terms" name="terms" style="min-height:7rem"
                 placeholder="Leave empty to use the library-wide terms">{{ book.terms }}</textarea>
       <div class="hint">Empty falls back to the library terms set on the
-        <a class="back" href="/millsandgoonsadmin">admin home</a>. Readers reach you at
+        <a class="back" href="{{ ab }}">admin home</a>. Readers reach you at
         <code>t.me/{{ settings.telegram }}</code>.</div>
 
       <label>Unlock code</label>
@@ -111,7 +111,7 @@
 
   <div class="card">
     <h2>Danger</h2>
-    <form method="post" action="/millsandgoonsadmin/b/{{ book.slug }}/delete"
+    <form method="post" action="{{ ab }}/b/{{ book.slug }}/delete"
           onsubmit="return confirm('Delete “{{ book.title }}” and its images?');">
       <button class="danger" type="submit">Delete this book</button>
     </form>

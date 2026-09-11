@@ -51,9 +51,9 @@ me ──ticket──▶ Share console ──order──▶ my Kite (Kite Connec
 | `/m/{token}` | friend | Auto-submitting pre-filled Kite basket — one tap to confirm |
 | `/kite/postback` | Kite | My order fills (checksum-verified) |
 | `/kite/redirect` | Kite | My daily login **and** friends' basket confirmations |
-| `/millsandgoons` | readers | Ebook library shelf — covers, authors, per-book reading progress |
-| `/millsandgoons/b/{slug}` | readers | Kindle-style reader: paged text, swipe/tap page turns, pinch to resize, chapters, light/dark |
-| `/millsandgoonsadmin` | me | Add books by uploading `.docx` (pictures included), `.txt`/`.md`, or pasted text; edit or delete them |
+| `/millsandgoons` · `/` on the books domain | readers | Ebook library shelf — covers, authors, per-book reading progress |
+| `/millsandgoons/b/{slug}` · `/b/{slug}` | readers | Kindle-style reader: paged text, swipe/tap page turns, pinch to resize, chapters, light/dark |
+| `/millsandgoonsadmin` · `/admin` | me | Add books by uploading `.docx` (pictures included), `.txt`/`.md`, or pasted text; edit, gate or delete them |
 
 ### Ebooks
 
@@ -68,6 +68,16 @@ from Word's heading styles (falling back to lines like "Chapter 3" /
 flow. EMF/WMF drawings are skipped because browsers can't draw them.
 Reading position, text size and theme live in the reader's own browser, not
 on the server.
+
+**Its own domain (`BOOKS_HOST`).** Set `BOOKS_HOST=millsandgoon.com` and that
+hostname — plus its `www.` form — becomes a books-only site: the shelf at `/`,
+a book at `/b/<slug>`, admin at `/admin`, and every trading route returns 404
+there. The console, board, `/api/*` and the Kite postback/redirect keep
+working on the app's other hostname (the `.onrender.com` one), where the
+library stays on its long `/millsandgoons` paths and the short ones 404. One
+deployment, one disk, two faces; leave the variable empty and nothing
+changes. Point the domain at the host with an A record for the apex and a
+CNAME for `www` (your platform's dashboard gives the exact values).
 
 **Paid unlock.** A book can give away its first N chapters and gate the rest.
 The locked chapters are withheld *server-side* — they never reach an unpaid

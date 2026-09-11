@@ -83,11 +83,11 @@
 {% else %}
   <div class="shelf">
     {% for b in books %}
-    <a class="book" href="/millsandgoons/b/{{ b.slug }}" data-slug="{{ b.slug }}">
+    <a class="book" href="{{ rb }}/b/{{ b.slug }}" data-slug="{{ b.slug }}">
       <div class="cover">
         <span class="spine"></span>
         {% if b.cover %}
-          <img src="/millsandgoons/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
+          <img src="{{ rb }}/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
         {% else %}
           <span class="lettering">{{ b.title }}</span>
         {% endif %}

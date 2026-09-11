@@ -29,6 +29,10 @@ class Settings:
     anthropic_workspace_id: str = field(default_factory=lambda: _env("ANTHROPIC_WORKSPACE_ID"))
     vision_model: str = field(default_factory=lambda: _env("VISION_MODEL", "claude-opus-5"))
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "kitecast.db"))
+    # Public domain that serves ONLY the ebook library (reader at /, admin at
+    # /admin). Everything Kite 404s there. Comma-separated; the www. form of
+    # each is matched too. Empty = no such domain, app behaves as one site.
+    books_host: str = field(default_factory=lambda: _env("BOOKS_HOST"))
     # Open decision 10 — share timing: "fill" (default) or "placement".
     share_timing_entry: str = field(default_factory=lambda: _env("SHARE_TIMING_ENTRY", "fill"))
     share_timing_exit: str = field(default_factory=lambda: _env("SHARE_TIMING_EXIT", "fill"))

@@ -42,7 +42,7 @@
 </head>
 <body>
 <main>
-  <h1>Ebook library — admin &nbsp; <a href="/millsandgoons">open library →</a></h1>
+  <h1>Ebook library — admin &nbsp; <a href="{{ rb or '/' }}">open library →</a></h1>
 
   {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
@@ -54,7 +54,7 @@
       {% for b in books %}
       <div class="row">
         {% if b.cover %}
-          <img class="thumb" src="/millsandgoons/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
+          <img class="thumb" src="{{ rb }}/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
         {% else %}
           <span class="thumb"></span>
         {% endif %}
@@ -65,8 +65,8 @@
             · {{ b.chapters }} chapter{{ 's' if b.chapters != 1 }}{% if b.images %} · {{ b.images }} image{{ 's' if b.images != 1 }}{% endif %}{% if b.gated %} · 🔒 {{ b.free_chapters }} free · code <b>{{ b.code }}</b>{% endif %}
           </div>
         </span>
-        <a class="edit" href="/millsandgoonsadmin/b/{{ b.slug }}">edit</a>
-        <a class="edit" href="/millsandgoons/b/{{ b.slug }}">read</a>
+        <a class="edit" href="{{ ab }}/b/{{ b.slug }}">edit</a>
+        <a class="edit" href="{{ rb }}/b/{{ b.slug }}">read</a>
       </div>
       {% endfor %}
     {% endif %}
@@ -74,7 +74,7 @@
 
   <div class="card">
     <h2>Payment</h2>
-    <form method="post" action="/millsandgoonsadmin/settings">
+    <form method="post" action="{{ ab }}/settings">
       <label for="telegram">Telegram handle readers message to pay</label>
       <input type="text" id="telegram" name="telegram" value="{{ settings.telegram }}"
              placeholder="onepunchcall">
@@ -93,7 +93,7 @@
 
   <div class="card">
     <h2>Add a book</h2>
-    <form method="post" action="/millsandgoonsadmin" enctype="multipart/form-data">
+    <form method="post" action="{{ ab }}" enctype="multipart/form-data">
       <label for="title">Title <span class="hint">(optional — taken from the file if blank)</span></label>
       <input type="text" id="title" name="title" placeholder="Mills &amp; Goons">
 

@@ -10,7 +10,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import (FileResponse, HTMLResponse, PlainTextResponse,
+                               RedirectResponse)
 from fastapi.templating import Jinja2Templates
 
 from . import basket
@@ -27,6 +28,56 @@ from .vision import VisionExtractor
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# ---- the books-only public domain (BOOKS_HOST) ----
+#
+# One app, two faces. On the books domain the library lives at the root and
+# its admin at /admin, and every trading route is simply not there. On any
+# other hostname (the .onrender.com one) nothing changes: the console is at
+# / and the library keeps its long /millsandgoons paths.
+
+_BOOKS_PASSTHROUGH = ("/favicon.ico", "/apple-touch-icon.png", "/healthz")
+
+
+def books_hosts() -> set[str]:
+    """Hostnames that serve books only — each configured host plus its www."""
+    hosts: set[str] = set()
+    for raw in (settings.books_host or "").split(","):
+        host = raw.strip().lower().lstrip("*.")
+        if not host:
+            continue
+        hosts.add(host)
+        if not host.startswith("www."):
+            hosts.add("www." + host)
+    return hosts
+
+
+def books_path(path: str) -> str | None:
+    """Map a path on the books domain to the route that serves it, or None
+    if that path doesn't exist there (everything Kite)."""
+    if path == "/":
+        return "/millsandgoons"
+    if path == "/admin":
+        return "/millsandgoonsadmin"
+    if path.startswith("/admin/"):
+        return "/millsandgoonsadmin" + path[len("/admin"):]
+    if path == "/b" or path.startswith("/b/"):
+        return "/millsandgoons" + path
+    if path in _BOOKS_PASSTHROUGH or path.startswith("/millsandgoons"):
+        return path          # the long URLs keep working if one gets shared
+    return None
+
+
+def _on_books(request: Request) -> bool:
+    return bool(getattr(request.state, "on_books", False))
+
+
+def reader_base(request: Request) -> str:
+    return "" if _on_books(request) else "/millsandgoons"
+
+
+def admin_base(request: Request) -> str:
+    return "/admin" if _on_books(request) else "/millsandgoonsadmin"
 
 
 def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
@@ -47,6 +98,23 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
 
     app = FastAPI(title="KiteCast Trade Share")
     app.state.service = service
+
+    @app.middleware("http")
+    async def books_domain(request: Request, call_next):
+        host = (request.headers.get("host") or "").split(":")[0].lower()
+        path = request.url.path
+        on_books = host in books_hosts()
+        request.state.on_books = on_books
+        if on_books:
+            mapped = books_path(path)
+            if mapped is None:          # the trading side doesn't exist here
+                return PlainTextResponse("Not found", status_code=404)
+            request.scope["path"] = mapped
+            request.scope["raw_path"] = mapped.encode()
+        elif path in ("/admin", "/b") or path.startswith(("/admin/", "/b/")):
+            # the short paths belong to the books domain only
+            return PlainTextResponse("Not found", status_code=404)
+        return await call_next(request)
 
     # ---- my side: Share console ----
 
@@ -528,7 +596,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         books = library.books()
         for b in books:
             b["locked"] = b["gated"] and not _unlocked(request, b)
-        return templates.TemplateResponse(request, "ebook_library.html", {"books": books})
+        return templates.TemplateResponse(request, "ebook_library.html", {
+            "books": books, "rb": reader_base(request), "ab": admin_base(request)})
 
     @app.get("/millsandgoons/b/{slug}", response_class=HTMLResponse)
     def ebook_reader(request: Request, slug: str):
@@ -545,20 +614,21 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "slug": slug, "title": book.get("title", ""),
             "author": book.get("author", ""),
             "blocks": blocks, "chapters": chapters,
-            "locked_titles": locked_titles,
+            "locked_titles": locked_titles, "rb": reader_base(request),
             "terms": library.unlock_terms(book) if locked_titles else "",
             "telegram": library.settings()["telegram"],
             "bad_code": request.query_params.get("bad") == "1",
         })
 
     @app.post("/millsandgoons/b/{slug}/unlock")
-    def ebook_unlock(slug: str, code: str = Form("")):
+    def ebook_unlock(request: Request, slug: str, code: str = Form("")):
         book = library.get(slug)
         if not book:
             raise HTTPException(404, "No such book")
+        here = f"{reader_base(request)}/b/{slug}"
         if not code_matches(code, book.get("code", "")):
-            return RedirectResponse(f"/millsandgoons/b/{slug}?bad=1", status_code=303)
-        resp = RedirectResponse(f"/millsandgoons/b/{slug}", status_code=303)
+            return RedirectResponse(f"{here}?bad=1", status_code=303)
+        resp = RedirectResponse(here, status_code=303)
         resp.set_cookie(f"mg_unlock_{slug}", book["code"], max_age=3 * 365 * 24 * 3600,
                         httponly=True, samesite="lax")
         return resp
@@ -595,16 +665,18 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return templates.TemplateResponse(request, "ebook_admin.html", {
             "books": library.books(), "flash": request.query_params.get("flash"),
             "settings": library.settings(),
+            "rb": reader_base(request), "ab": admin_base(request),
         })
 
     @app.post("/millsandgoonsadmin/settings")
-    def ebook_admin_settings(telegram: str = Form(""), terms: str = Form("")):
+    def ebook_admin_settings(request: Request, telegram: str = Form(""),
+                             terms: str = Form("")):
         library.save_settings(telegram, terms)
-        return RedirectResponse("/millsandgoonsadmin?flash=Payment+settings+saved.",
+        return RedirectResponse(f"{admin_base(request)}?flash=Payment+settings+saved.",
                                 status_code=303)
 
     @app.post("/millsandgoonsadmin")
-    async def ebook_admin_add(title: str = Form(""), author: str = Form(""),
+    async def ebook_admin_add(request: Request, title: str = Form(""), author: str = Form(""),
                               text: str = Form(""), free_chapters: int = Form(0),
                               terms: str = Form(""),
                               bookfile: UploadFile | None = File(None)):
@@ -618,8 +690,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         slug = library.unique_slug(title)
         library.save(slug, title, author, blocks, media or {},
                      free_chapters=free_chapters, terms=terms)
-        return RedirectResponse(f"/millsandgoonsadmin?flash=Added+%E2%80%9C{quote(title)}%E2%80%9D",
-                                status_code=303)
+        return RedirectResponse(
+            f"{admin_base(request)}?flash=Added+%E2%80%9C{quote(title)}%E2%80%9D",
+            status_code=303)
 
     @app.get("/millsandgoonsadmin/b/{slug}", response_class=HTMLResponse)
     def ebook_admin_edit(request: Request, slug: str):
@@ -634,10 +707,12 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "flash": request.query_params.get("flash"),
             "settings": library.settings(),
             "locked_titles": split_free(blocks, book.get("free_chapters", 0))[1],
+            "rb": reader_base(request), "ab": admin_base(request),
         })
 
     @app.post("/millsandgoonsadmin/b/{slug}")
-    async def ebook_admin_save(slug: str, title: str = Form(""), author: str = Form(""),
+    async def ebook_admin_save(request: Request, slug: str, title: str = Form(""),
+                               author: str = Form(""),
                                text: str = Form(""), free_chapters: int = Form(0),
                                terms: str = Form(""), regenerate: str = Form(""),
                                bookfile: UploadFile | None = File(None)):
@@ -650,12 +725,12 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                      media, added=book.get("added"),
                      free_chapters=free_chapters, terms=terms,
                      code=new_code() if regenerate else None)
-        return RedirectResponse(f"/millsandgoonsadmin/b/{slug}?flash=Saved.", status_code=303)
+        return RedirectResponse(f"{admin_base(request)}/b/{slug}?flash=Saved.", status_code=303)
 
     @app.post("/millsandgoonsadmin/b/{slug}/delete")
-    def ebook_admin_delete(slug: str):
+    def ebook_admin_delete(request: Request, slug: str):
         library.delete(slug)
-        return RedirectResponse("/millsandgoonsadmin?flash=Deleted.", status_code=303)
+        return RedirectResponse(f"{admin_base(request)}?flash=Deleted.", status_code=303)
 
     return app
 

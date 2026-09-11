@@ -447,3 +447,114 @@ def test_book_terms_override_library_terms(client):
                 data={"title": "Gated", "free_chapters": 1, "terms": "Just this book"})
     page = client.get("/millsandgoons/b/gated").text
     assert "Just this book" in page and "Library terms" not in page
+
+# --------------------------------------------------------- the books domain
+
+@pytest.fixture
+def books_client(ledger, kite, telegram, settings, monkeypatch):
+    """A client whose requests arrive on the public books domain."""
+    monkeypatch.setattr(app_settings, "db_path", settings.db_path)
+    monkeypatch.setattr(app_settings, "books_host", "millsandgoon.com")
+    c = TestClient(build_app(ledger=ledger, kite=kite, telegram=telegram))
+    c.headers.update({"host": "millsandgoon.com"})
+    return c
+
+
+def test_books_host_serves_the_library_at_the_root(books_client):
+    books_client.post("/admin", data={"title": "Mills & Goons", "text": SAMPLE})
+    root = books_client.get("/")
+    assert root.status_code == 200
+    assert "Mills &amp; Goons" in root.text
+    # links are short ones, with no /millsandgoons prefix anywhere
+    assert 'href="/b/mills-goons"' in root.text
+    assert "millsandgoons" not in root.text
+
+    reader = books_client.get("/b/mills-goons")
+    assert reader.status_code == 200 and "dark and stormy" in reader.text
+    assert "millsandgoonsadmin" not in reader.text
+
+
+def test_books_host_has_no_kite_routes(books_client):
+    for path in ("/board", "/friends", "/screenshot", "/api/instruments",
+                 "/kite/postback", "/kite/redirect", "/auth/login", "/trade"):
+        assert books_client.get(path).status_code == 404, path
+    assert books_client.post("/trade", data={}).status_code == 404
+    # the console never renders on this domain — / is the shelf
+    assert "Place & Share" not in books_client.get("/").text
+
+
+def test_books_host_admin_lives_at_slash_admin(books_client):
+    assert books_client.get("/admin").status_code == 200
+    r = books_client.post("/admin", data={"title": "Gated", "text": GATED,
+                                          "free_chapters": 1}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/admin?")
+
+    edit = books_client.get("/admin/b/gated")
+    assert edit.status_code == 200
+    assert 'action="/admin/b/gated"' in edit.text
+    r = books_client.post("/admin/b/gated", data={"title": "Gated", "free_chapters": 1},
+                          follow_redirects=False)
+    assert r.headers["location"] == "/admin/b/gated?flash=Saved."
+
+
+def test_books_host_unlock_round_trip_stays_on_short_paths(books_client):
+    books_client.post("/admin", data={"title": "Gated", "text": GATED, "free_chapters": 1})
+    code = books_client.get("/admin").text.split("code <b>")[1].split("</b>")[0]
+
+    page = books_client.get("/b/gated").text
+    assert 'action="/b/gated/unlock"' in page and "Paid words here." not in page
+
+    bad = books_client.post("/b/gated/unlock", data={"code": "NOPE22"},
+                            follow_redirects=False)
+    assert bad.headers["location"] == "/b/gated?bad=1"
+
+    ok = books_client.post("/b/gated/unlock", data={"code": code}, follow_redirects=False)
+    assert ok.headers["location"] == "/b/gated"
+    assert "Paid words here." in books_client.get("/b/gated").text
+
+
+def test_books_host_serves_images_on_short_paths(books_client):
+    books_client.post("/admin", data={"title": "Pics"},
+                      files={"bookfile": ("p.docx", make_docx(), "application/octet-stream")})
+    slug = "pics"
+    assert f'/b/{slug}/media/img001.png' in books_client.get(f"/b/{slug}").text
+    img = books_client.get(f"/b/{slug}/media/img001.png")
+    assert img.status_code == 200 and img.content == PNG
+
+
+def test_long_paths_still_work_on_the_books_host(books_client):
+    """A link someone already shared shouldn't break."""
+    books_client.post("/admin", data={"title": "Mills & Goons", "text": SAMPLE})
+    assert books_client.get("/millsandgoons").status_code == 200
+    assert books_client.get("/millsandgoons/b/mills-goons").status_code == 200
+
+
+def test_other_hosts_keep_the_console_and_reject_short_paths(books_client):
+    """Same app, reached on the onrender hostname."""
+    books_client.post("/admin", data={"title": "Mills & Goons", "text": SAMPLE})
+    other = {"host": "kitecast.onrender.com"}
+    assert books_client.get("/millsandgoons", headers=other).status_code == 200
+    assert books_client.get("/millsandgoonsadmin", headers=other).status_code == 200
+    assert books_client.get("/board", headers=other).status_code == 200
+    # the pretty paths belong to the books domain only
+    assert books_client.get("/b/mills-goons", headers=other).status_code == 404
+    assert books_client.get("/admin", headers=other).status_code == 404
+    # and its pages link with the long prefix
+    assert 'href="/millsandgoons/b/mills-goons"' in books_client.get(
+        "/millsandgoons", headers=other).text
+
+
+def test_www_and_port_forms_count_as_the_books_host(books_client):
+    books_client.post("/admin", data={"title": "Mills & Goons", "text": SAMPLE})
+    for host in ("www.millsandgoon.com", "MillsAndGoon.com", "millsandgoon.com:443"):
+        r = books_client.get("/", headers={"host": host})
+        assert r.status_code == 200 and "Mills &amp; Goons" in r.text, host
+
+
+def test_without_books_host_nothing_changes(client):
+    """The default deployment: one hostname, console at /, short paths gone."""
+    client.post("/millsandgoonsadmin", data={"title": "Mills & Goons", "text": SAMPLE})
+    assert client.get("/millsandgoons").status_code == 200
+    assert client.get("/b/mills-goons").status_code == 404
+    assert client.get("/admin").status_code == 404
+    assert client.get("/board").status_code == 200
