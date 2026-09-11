@@ -33,8 +33,8 @@
   ol { margin:.5rem 0 0; padding-left:1.4rem; color:var(--dim); font-size:.88rem; }
   .hint { color:var(--dim); font-size:.8rem; margin-top:.5rem; }
   .hint a { color:var(--dim); }
-  .code { font:1.3rem/1.4 ui-monospace, Menlo, Consolas, monospace; letter-spacing:.22em;
-          color:var(--green); padding:.3rem 0; }
+  .cover { display:block; width:88px; height:132px; object-fit:cover; border-radius:4px;
+           border:1px solid var(--line); margin:.2rem 0 .5rem; }
   .checkline { display:flex; align-items:center; gap:.45rem; color:var(--fg);
                font-size:.85rem; margin-top:.4rem; }
   .checkline input { width:auto; }
@@ -68,6 +68,14 @@
       <label for="author">Author</label>
       <input type="text" id="author" name="author" value="{{ book.author }}">
 
+      <label for="coverfile">Cover image</label>
+      {% if cover_src %}<img class="cover" src="{{ rb }}{{ cover_src }}" alt="">{% endif %}
+      <input type="file" id="coverfile" name="coverfile" accept="image/*">
+      {% if book.cover_file %}
+      <label class="checkline"><input type="checkbox" name="remove_cover" value="1">
+        Remove the uploaded cover</label>
+      {% endif %}
+
       <label for="bookfile">Replace content with a file (.docx, .txt, .md)</label>
       <input type="file" id="bookfile" name="bookfile" accept=".docx,.txt,.md,.markdown,text/plain">
       <div class="hint">Uploading replaces the text <em>and</em> the images. Leave empty to
@@ -100,10 +108,11 @@
         <a class="back" href="{{ ab }}">admin home</a>. Readers reach you at
         <code>t.me/{{ settings.telegram }}</code>.</div>
 
-      <label>Unlock code</label>
-      <div class="code">{{ book.code }}</div>
-      <label class="checkline"><input type="checkbox" name="regenerate" value="1">
-        Issue a new code <span class="hint">— everyone using the old one is locked out again</span></label>
+      <label class="checkline"><input type="checkbox" name="unlocked" value="1"
+             {{ 'checked' if book.unlocked }}>
+        <b>Unlocked</b> — open the paid chapters to everyone</label>
+      <div class="hint">Tick this once a reader has paid you. It opens the whole book
+        for every visitor, so untick it to put the gate back up.</div>
 
       <button type="submit">Save changes</button>
     </form>

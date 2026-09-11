@@ -53,8 +53,8 @@
     {% else %}
       {% for b in books %}
       <div class="row">
-        {% if b.cover %}
-          <img class="thumb" src="{{ rb }}/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
+        {% if b.cover_src %}
+          <img class="thumb" src="{{ rb }}{{ b.cover_src }}" alt="">
         {% else %}
           <span class="thumb"></span>
         {% endif %}
@@ -62,7 +62,7 @@
           <div class="t">{{ b.title }}</div>
           <div class="s">
             {% if b.author %}{{ b.author }} · {% endif %}{{ "{:,}".format(b.words) }} words
-            · {{ b.chapters }} chapter{{ 's' if b.chapters != 1 }}{% if b.images %} · {{ b.images }} image{{ 's' if b.images != 1 }}{% endif %}{% if b.gated %} · 🔒 {{ b.free_chapters }} free · code <b>{{ b.code }}</b>{% endif %}
+            · {{ b.chapters }} chapter{{ 's' if b.chapters != 1 }}{% if b.images %} · {{ b.images }} image{{ 's' if b.images != 1 }}{% endif %}{% if b.gated %} · {% if b.unlocked %}<b style="color:var(--green)">unlocked</b>{% else %}🔒 {{ b.free_chapters }} free{% endif %}{% endif %}
           </div>
         </span>
         <a class="edit" href="{{ ab }}/b/{{ b.slug }}">edit</a>
@@ -104,6 +104,11 @@
       <input type="file" id="bookfile" name="bookfile" accept=".docx,.txt,.md,.markdown,text/plain">
       <div class="hint">Word files keep their pictures — images are pulled out of the
         document and shown in place in the reader.</div>
+
+      <label for="coverfile">Cover image</label>
+      <input type="file" id="coverfile" name="coverfile" accept="image/*">
+      <div class="hint">Shown on the shelf. Without one, the book's first picture is
+        used, and failing that its title is set in type.</div>
 
       <label for="text">…or paste the full text</label>
       <textarea id="text" name="text" placeholder="Chapter 1&#10;&#10;It was a dark and stormy night…"></textarea>

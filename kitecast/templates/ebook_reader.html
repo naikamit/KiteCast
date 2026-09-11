@@ -91,19 +91,6 @@
     display:inline-block; background:var(--accent); color:#fff; text-decoration:none;
     padding:.75em 1.6em; border-radius:99px; font-size:.95em; font-weight:600;
   }
-  .gate form { display:flex; gap:.4em; width:100%; max-width:19em; }
-  .gate input {
-    flex:1; min-width:0; padding:.6em .7em; border:1px solid var(--line);
-    border-radius:8px; background:var(--bg); color:var(--fg);
-    font:inherit; font-size:.9em; text-align:center; letter-spacing:.14em;
-    text-transform:uppercase; user-select:text; -webkit-user-select:text;
-  }
-  .gate input::placeholder { text-transform:none; letter-spacing:normal; color:var(--dim); }
-  .gate button {
-    padding:.6em 1em; border:1px solid var(--line); border-radius:8px;
-    background:none; color:var(--fg); font:inherit; font-size:.85em; cursor:pointer;
-  }
-  .gate .err { margin:0; font-size:.8em; color:#d9534f; }
   .gate .rest { margin:0; font-size:.75em; color:var(--dim); }
   #toc a.locked { color:var(--dim); }
 
@@ -212,13 +199,8 @@
         {% if terms %}<div class="terms">{{ terms }}</div>{% endif %}
         <a class="unlock gate-ui" href="https://t.me/{{ telegram }}"
            target="_blank" rel="noopener">Unlock on Telegram</a>
-        <form class="gate-ui" method="post" action="{{ rb }}/b/{{ slug }}/unlock">
-          <input name="code" placeholder="unlock code" autocomplete="off"
-                 autocapitalize="characters" spellcheck="false" maxlength="24">
-          <button type="submit">Unlock</button>
-        </form>
-        {% if bad_code %}<p class="err">That code didn't work — try again.</p>{% endif %}
-        <p class="rest">{{ locked_titles|length }} more chapter{{ 's' if locked_titles|length != 1 }} behind this</p>
+        <p class="rest">{{ locked_titles|length }} more chapter{{ 's' if locked_titles|length != 1 }} behind this
+          · reload this page once it's open</p>
       </section>
       {%- endif %}
     </div>
@@ -506,8 +488,7 @@
   }
   paginate();
   var saved = parseInt(lsGet(LS.pos), 10);
-  if ({{ 'true' if bad_code else 'false' }} && gate) goTo(pages - 1, false);
-  else goTo(isNaN(saved) ? 0 : pageOf(blockByIndex(saved)), false);
+  goTo(isNaN(saved) ? 0 : pageOf(blockByIndex(saved)), false);
   // Images and webfonts land after first paint and reflow the columns.
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(settle);
   var imgs = content.querySelectorAll('img'), left = imgs.length;

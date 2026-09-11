@@ -80,15 +80,20 @@ changes. Point the domain at the host with an A record for the apex and a
 CNAME for `www` (your platform's dashboard gives the exact values).
 
 **Paid unlock.** A book can give away its first N chapters and gate the rest.
-The locked chapters are withheld *server-side* — they never reach an unpaid
+The locked chapters are withheld *server-side* — they never reach a locked
 browser, so View Source doesn't defeat the wall. When the reader turns past
 the free text they land on a gate page carrying the payment terms (written in
-admin, per book or library-wide), an **Unlock on Telegram** button opening
-`t.me/<handle>` (default `onepunchcall`), and a box for the unlock code. Each
-book has its own short code, shown in admin and regenerable; entering it sets
-a long-lived cookie and the whole book opens. It's a shared code, not a
-per-reader licence — right-sized for selling by hand over chat, and rotate it
-if it leaks.
+admin, per book or library-wide) and an **Unlock on Telegram** button opening
+`t.me/<handle>` (default `onepunchcall`). Opening the book is a single
+**Unlocked** checkbox in admin: tick it when someone has paid and the whole
+book opens for everyone, untick it to put the gate back. Deliberately not a
+per-reader licence — this is for selling a title by hand over chat.
+
+**Covers.** Admin takes a cover image per book, stored as `<slug>/cover.<ext>`
+so replacing the text later leaves it alone. Without an upload the book's
+first picture stands in, and failing that the shelf sets the title in type.
+Under each cover the shelf shows chapter count and an estimated reading time
+(220 wpm, plus a few seconds a picture) rather than repeating the title.
 
 ## Setup
 

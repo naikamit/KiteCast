@@ -15,7 +15,6 @@ flow:
 
 import json
 import re
-import secrets
 import shutil
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -223,6 +222,20 @@ def prepare(blocks: list[dict]) -> tuple[list[dict], list[dict]]:
     return out, chapters
 
 
+# Average adult silent-reading speed for prose; images get a token 12s each
+# the way article estimators do, so a picture-heavy book isn't understated.
+WORDS_PER_MINUTE = 220
+
+
+def reading_time(words: int, images: int = 0) -> str:
+    """Human reading estimate: "9 min", "1 hr", "2 hr 15 min"."""
+    minutes = max(1, round(words / WORDS_PER_MINUTE + images * 0.2))
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, rest = divmod(minutes, 60)
+    return f"{hours} hr" if rest == 0 else f"{hours} hr {rest} min"
+
+
 def word_count(blocks: list[dict]) -> int:
     return sum(len(b.get("x", "").split()) for b in blocks if b.get("t") in ("p", "h"))
 
@@ -268,13 +281,7 @@ def parse_text_with_images(text: str, known: set[str]) -> list[dict]:
 
 # ------------------------------------------------------------- paid unlock
 
-# Unambiguous alphabet: no O/0, I/1 — these codes get read out over chat.
-_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 DEFAULT_TELEGRAM = "onepunchcall"
-
-
-def new_code(length: int = 6) -> str:
-    return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(length))
 
 
 def split_free(blocks: list[dict], free_chapters: int) -> tuple[list[dict], list[str]]:
@@ -293,10 +300,13 @@ def split_free(blocks: list[dict], free_chapters: int) -> tuple[list[dict], list
     return blocks[:cut], [blocks[i]["x"] for i in heads[free_chapters:]]
 
 
-def code_matches(given: str, expected: str) -> bool:
-    if not expected or not given:
-        return False
-    return secrets.compare_digest(given.strip().upper(), expected.strip().upper())
+def cover_src(book: dict) -> str:
+    """Path (below the reader's base) of this book's cover, or "" for none."""
+    slug = book.get("slug", "")
+    if book.get("cover_file"):
+        return f"/b/{slug}/cover?v={book.get('cover_v', 0)}"
+    first = next((b["x"] for b in book.get("blocks", []) if b.get("t") == "img"), "")
+    return f"/b/{slug}/media/{first}" if first else ""
 
 
 # ----------------------------------------------------------------- store
@@ -350,14 +360,16 @@ class Library:
             if not book:
                 continue
             blocks = book.get("blocks", [])
+            words, images = word_count(blocks), image_count(blocks)
             out.append({
                 "slug": book.get("slug", slug), "title": book.get("title", slug),
                 "author": book.get("author", ""), "added": book.get("added", ""),
-                "cover": book.get("cover", ""),
-                "words": word_count(blocks), "images": image_count(blocks),
+                "cover_src": cover_src(book),
+                "words": words, "images": images,
+                "read_time": reading_time(words, images),
                 "chapters": sum(1 for b in blocks if b.get("t") == "h"),
                 "free_chapters": book.get("free_chapters", 0),
-                "code": book.get("code", ""),
+                "unlocked": bool(book.get("unlocked")),
                 "gated": bool(split_free(blocks, book.get("free_chapters", 0))[1]),
             })
         out.sort(key=lambda b: b["added"], reverse=True)
@@ -372,28 +384,31 @@ class Library:
     def save(self, slug: str, title: str, author: str, blocks: list[dict],
              media: dict[str, bytes] | None = None, added: str | None = None,
              free_chapters: int | None = None, terms: str | None = None,
-             code: str | None = None) -> str:
+             unlocked: bool | None = None) -> str:
         """Write a book. `media` replaces the book's images when given; pass
         None to leave existing images alone (a metadata-only edit). The
         paywall fields work the same way — None keeps what's stored."""
         if not _safe_name(slug):
             raise ValueError("Bad book id")
         old = self.get(slug) or {}
-        cover = next((b["x"] for b in blocks if b.get("t") == "img"), "")
         book = {
             "slug": slug, "title": title.strip() or "Untitled",
-            "author": author.strip(), "blocks": blocks, "cover": cover,
+            "author": author.strip(), "blocks": blocks,
+            # an uploaded cover outlives content edits; otherwise the first
+            # picture in the book stands in for one
+            "cover_file": old.get("cover_file", ""),
+            "cover_v": old.get("cover_v", 0),
             "added": added or old.get("added")
                      or datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "free_chapters": max(0, int(old.get("free_chapters", 0)
                                         if free_chapters is None else free_chapters)),
             "terms": (old.get("terms", "") if terms is None else terms).strip(),
-            "code": (code or old.get("code") or new_code()).strip().upper(),
+            "unlocked": bool(old.get("unlocked", False) if unlocked is None else unlocked),
         }
         if self._root is None:
-            self._mem[slug] = book
             if media is not None:
                 self._mem_media[slug] = dict(media)
+            self._write(slug, book)
             return slug
 
         d = self._dir(slug)
@@ -406,10 +421,18 @@ class Library:
                 for name, raw in media.items():
                     if _safe_name(name) and media_type(name):
                         (mdir / name).write_bytes(raw)
+        self._write(slug, book)
+        return slug
+
+    def _write(self, slug: str, book: dict) -> None:
+        if self._root is None:
+            self._mem[slug] = book
+            return
+        d = self._dir(slug)
+        d.mkdir(parents=True, exist_ok=True)
         tmp = d / "book.json.tmp"
         tmp.write_text(json.dumps(book, ensure_ascii=False), encoding="utf-8")
         tmp.replace(d / "book.json")
-        return slug
 
     def unique_slug(self, title: str, keep: str | None = None) -> str:
         base = slugify(title)
@@ -430,6 +453,47 @@ class Library:
             return False
         shutil.rmtree(d, ignore_errors=True)
         return True
+
+    # -- cover image (uploaded separately, so replacing the text keeps it)
+
+    def cover_path(self, slug: str) -> Path | None:
+        book = self.get(slug) or {}
+        name = book.get("cover_file")
+        if not name or self._root is None or not _safe_name(slug) or not _safe_name(name):
+            return None
+        p = self._dir(slug) / name
+        return p if p.is_file() else None
+
+    def set_cover(self, slug: str, filename: str, data: bytes) -> None:
+        """Store an uploaded cover. Replaces any previous one."""
+        ext = Path(filename or "").suffix.lower()
+        if not media_type("x" + ext):
+            raise ValueError("Cover must be a PNG, JPEG, GIF, WEBP or SVG image")
+        if not data or len(data) > MAX_IMAGE_BYTES:
+            raise ValueError("Cover image is empty or too large")
+        book = self.get(slug)
+        if not book:
+            raise ValueError("No such book")
+        name = "cover" + ext
+        if self._root is not None:
+            d = self._dir(slug)
+            d.mkdir(parents=True, exist_ok=True)
+            for stale in d.glob("cover.*"):        # a different extension
+                stale.unlink(missing_ok=True)
+            (d / name).write_bytes(data)
+        book["cover_file"] = name
+        book["cover_v"] = int(book.get("cover_v", 0)) + 1
+        self._write(slug, book)
+
+    def clear_cover(self, slug: str) -> None:
+        book = self.get(slug)
+        if not book or not book.get("cover_file"):
+            return
+        if self._root is not None:
+            for stale in self._dir(slug).glob("cover.*"):
+                stale.unlink(missing_ok=True)
+        book["cover_file"] = ""
+        self._write(slug, book)
 
     # -- library-wide settings
 

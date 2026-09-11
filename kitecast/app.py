@@ -17,8 +17,8 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
-from .ebook import (Library, blocks_to_text, code_matches, image_count, media_type, new_code,
-                    parse_text_with_images, parse_upload, prepare, split_free, word_count)
+from .ebook import (Library, blocks_to_text, cover_src, image_count, media_type, parse_text_with_images,
+                    parse_upload, prepare, split_free, word_count)
 from .instruments import InstrumentStore, days_to_expiry, moneyness
 from .kite import KiteClient, KiteError
 from .service import TradeShareService
@@ -586,16 +586,11 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         library.migrate_single_book(
             str(Path(settings.db_path).resolve().with_name("ebook_millsandgoons.json")))
 
-    def _unlocked(request: Request, book: dict) -> bool:
-        """A paying reader carries the book's code in a cookie."""
-        return code_matches(request.cookies.get(f"mg_unlock_{book.get('slug', '')}", ""),
-                            book.get("code", ""))
-
     @app.get("/millsandgoons", response_class=HTMLResponse)
     def ebook_library(request: Request):
         books = library.books()
         for b in books:
-            b["locked"] = b["gated"] and not _unlocked(request, b)
+            b["locked"] = b["gated"] and not b["unlocked"]
         return templates.TemplateResponse(request, "ebook_library.html", {
             "books": books, "rb": reader_base(request), "ab": admin_base(request)})
 
@@ -606,9 +601,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             raise HTTPException(404, "No such book")
         # The locked chapters never reach the browser — hiding them in the
         # DOM would put the whole book one View Source away.
-        unlocked = _unlocked(request, book)
-        free, locked_titles = split_free(book.get("blocks", []),
-                                         0 if unlocked else book.get("free_chapters", 0))
+        free, locked_titles = split_free(
+            book.get("blocks", []),
+            0 if book.get("unlocked") else book.get("free_chapters", 0))
         blocks, chapters = prepare(free)
         return templates.TemplateResponse(request, "ebook_reader.html", {
             "slug": slug, "title": book.get("title", ""),
@@ -617,21 +612,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "locked_titles": locked_titles, "rb": reader_base(request),
             "terms": library.unlock_terms(book) if locked_titles else "",
             "telegram": library.settings()["telegram"],
-            "bad_code": request.query_params.get("bad") == "1",
         })
-
-    @app.post("/millsandgoons/b/{slug}/unlock")
-    def ebook_unlock(request: Request, slug: str, code: str = Form("")):
-        book = library.get(slug)
-        if not book:
-            raise HTTPException(404, "No such book")
-        here = f"{reader_base(request)}/b/{slug}"
-        if not code_matches(code, book.get("code", "")):
-            return RedirectResponse(f"{here}?bad=1", status_code=303)
-        resp = RedirectResponse(here, status_code=303)
-        resp.set_cookie(f"mg_unlock_{slug}", book["code"], max_age=3 * 365 * 24 * 3600,
-                        httponly=True, samesite="lax")
-        return resp
 
     @app.get("/millsandgoons/b/{slug}/media/{name}")
     def ebook_media(slug: str, name: str):
@@ -641,7 +622,26 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         return FileResponse(path, media_type=media_type(name) or "application/octet-stream",
                             headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
+    @app.get("/millsandgoons/b/{slug}/cover")
+    def ebook_cover(slug: str):
+        path = library.cover_path(slug)
+        if path is None:
+            raise HTTPException(404, "No cover")
+        return FileResponse(path, media_type=media_type(path.name) or "image/png",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
     # -- admin
+
+    async def _save_cover(slug: str, upload: UploadFile | None, remove: str = "") -> None:
+        if remove:
+            library.clear_cover(slug)
+            return
+        if upload is None or not upload.filename:
+            return
+        try:
+            library.set_cover(slug, upload.filename, await upload.read())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     async def _content_from_form(upload: UploadFile | None, text: str,
                                  book: dict | None = None):
@@ -678,8 +678,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     @app.post("/millsandgoonsadmin")
     async def ebook_admin_add(request: Request, title: str = Form(""), author: str = Form(""),
                               text: str = Form(""), free_chapters: int = Form(0),
-                              terms: str = Form(""),
-                              bookfile: UploadFile | None = File(None)):
+                              terms: str = Form(""), unlocked: str = Form(""),
+                              bookfile: UploadFile | None = File(None),
+                              coverfile: UploadFile | None = File(None)):
         blocks, media = await _content_from_form(bookfile, text)
         if not blocks:
             raise HTTPException(400, "Give the book some text, or upload a .docx/.txt")
@@ -689,7 +690,9 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                                 if bookfile and bookfile.filename else "Untitled")
         slug = library.unique_slug(title)
         library.save(slug, title, author, blocks, media or {},
-                     free_chapters=free_chapters, terms=terms)
+                     free_chapters=free_chapters, terms=terms,
+                     unlocked=bool(unlocked))
+        await _save_cover(slug, coverfile)
         return RedirectResponse(
             f"{admin_base(request)}?flash=Added+%E2%80%9C{quote(title)}%E2%80%9D",
             status_code=303)
@@ -707,6 +710,7 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             "flash": request.query_params.get("flash"),
             "settings": library.settings(),
             "locked_titles": split_free(blocks, book.get("free_chapters", 0))[1],
+            "cover_src": cover_src(book),
             "rb": reader_base(request), "ab": admin_base(request),
         })
 
@@ -714,8 +718,10 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
     async def ebook_admin_save(request: Request, slug: str, title: str = Form(""),
                                author: str = Form(""),
                                text: str = Form(""), free_chapters: int = Form(0),
-                               terms: str = Form(""), regenerate: str = Form(""),
-                               bookfile: UploadFile | None = File(None)):
+                               terms: str = Form(""), unlocked: str = Form(""),
+                               remove_cover: str = Form(""),
+                               bookfile: UploadFile | None = File(None),
+                               coverfile: UploadFile | None = File(None)):
         book = library.get(slug)
         if not book:
             raise HTTPException(404, "No such book")
@@ -724,7 +730,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
                      blocks if blocks is not None else book.get("blocks", []),
                      media, added=book.get("added"),
                      free_chapters=free_chapters, terms=terms,
-                     code=new_code() if regenerate else None)
+                     unlocked=bool(unlocked))
+        await _save_cover(slug, coverfile, remove_cover)
         return RedirectResponse(f"{admin_base(request)}/b/{slug}?flash=Saved.", status_code=303)
 
     @app.post("/millsandgoonsadmin/b/{slug}/delete")

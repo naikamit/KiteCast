@@ -62,7 +62,7 @@
                  font:10px system-ui, sans-serif; }
   .bar i { display:block; height:100%; background:var(--accent); width:0; }
   .meta { margin:8px 2px 0; }
-  .meta .t { font-size:.88rem; line-height:1.3; }
+  .meta .t { font-size:.8rem; line-height:1.3; }
   .meta .a { font-size:.76rem; color:var(--dim); margin-top:2px; }
   .meta .p { font-size:.7rem; color:var(--accent); margin-top:3px; }
   .empty { color:var(--dim); text-align:center; padding:5rem 2rem; }
@@ -83,11 +83,12 @@
 {% else %}
   <div class="shelf">
     {% for b in books %}
-    <a class="book" href="{{ rb }}/b/{{ b.slug }}" data-slug="{{ b.slug }}">
+    <a class="book" href="{{ rb }}/b/{{ b.slug }}" data-slug="{{ b.slug }}"
+       aria-label="{{ b.title }}{% if b.author %} by {{ b.author }}{% endif %}">
       <div class="cover">
         <span class="spine"></span>
-        {% if b.cover %}
-          <img src="{{ rb }}/b/{{ b.slug }}/media/{{ b.cover }}" alt="">
+        {% if b.cover_src %}
+          <img src="{{ rb }}{{ b.cover_src }}" alt="{{ b.title }}">
         {% else %}
           <span class="lettering">{{ b.title }}</span>
         {% endif %}
@@ -95,7 +96,8 @@
         {% if b.locked %}<span class="lock">🔒 {{ b.free_chapters }} free</span>{% endif %}
       </div>
       <div class="meta">
-        <div class="t">{{ b.title }}</div>
+        <div class="t">{% if b.chapters %}{{ b.chapters }} chapter{{ 's' if b.chapters != 1 }} ·
+          {% endif %}{{ b.read_time }}</div>
         {% if b.author %}<div class="a">{{ b.author }}</div>{% endif %}
         <div class="p"></div>
       </div>

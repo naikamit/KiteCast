@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 from kitecast.app import build_app
 from kitecast.config import settings as app_settings
-from kitecast.ebook import (Library, blocks_to_text, code_matches, new_code, parse_docx,
-                            parse_text, parse_text_with_images, parse_upload, prepare,
+from kitecast.ebook import (Library, blocks_to_text, cover_src, parse_docx, parse_text,
+                            parse_text_with_images, parse_upload, prepare, reading_time,
                             slugify, split_free, word_count)
 
 # 1x1 pixels, enough for a real image byte-stream through the whole path.
@@ -156,6 +156,15 @@ def test_text_round_trip_keeps_images():
     assert parse_text_with_images(text, set())[2]["t"] == "p"
 
 
+def test_reading_time_reads_like_a_person_would_say_it():
+    assert reading_time(0) == "1 min"          # never "0 min"
+    assert reading_time(880) == "4 min"
+    assert reading_time(13_200) == "1 hr"      # exact hours drop the minutes
+    assert reading_time(60_000) == "4 hr 33 min"
+    # pictures add a little browsing time
+    assert reading_time(880, images=10) == "6 min"
+
+
 def test_slugify():
     assert slugify("Mills & Goons!") == "mills-goons"
     assert slugify("...") == "book"
@@ -236,8 +245,10 @@ def test_library_page_empty_then_populated(client):
                                                  "author": "A. Nonymous", "text": SAMPLE})
     assert r.status_code == 200          # redirect followed
     r = client.get("/millsandgoons")
-    assert "Mills &amp; Goons" in r.text and "A. Nonymous" in r.text
+    assert "A. Nonymous" in r.text
     assert '/millsandgoons/b/mills-goons"' in r.text
+    # the cover carries the title; underneath is chapters and reading time
+    assert "2 chapters ·" in r.text and "1 min" in r.text
 
 
 def test_reader_pages_never_link_to_the_admin_panel(client):
@@ -336,27 +347,18 @@ def test_split_free_no_gate_cases():
     assert split_free(parse_text("No headings at all."), 1)[1] == []
 
 
-def test_codes_are_unambiguous_and_compared_loosely():
-    code = new_code()
-    assert len(code) == 6 and set(code) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-    assert code_matches(f"  {code.lower()} ", code)
-    assert not code_matches("", code) and not code_matches(code, "")
-    assert not code_matches("ZZZZZZ", code)
-
-
 def test_library_keeps_paywall_fields_across_metadata_edits(tmp_path):
     lib = Library(str(tmp_path / "ebooks"))
     blocks = parse_text(GATED)
     lib.save("g", "G", "", blocks, {}, free_chapters=1, terms="Rs 199")
-    code = lib.get("g")["code"]
-    assert code and lib.get("g")["free_chapters"] == 1
+    assert lib.get("g")["free_chapters"] == 1 and lib.get("g")["unlocked"] is False
 
     lib.save("g", "G2", "", blocks, None)              # rename only
     book = lib.get("g")
-    assert (book["free_chapters"], book["terms"], book["code"]) == (1, "Rs 199", code)
+    assert (book["free_chapters"], book["terms"], book["unlocked"]) == (1, "Rs 199", False)
 
-    lib.save("g", "G2", "", blocks, None, code=new_code())
-    assert lib.get("g")["code"] != code
+    lib.save("g", "G2", "", blocks, None, unlocked=True)
+    assert lib.get("g")["unlocked"] is True
 
 
 def test_library_settings_default_to_the_telegram_handle(tmp_path):
@@ -379,7 +381,7 @@ def _add_gated_book(client, free=1, terms="Rs 199 for the rest."):
     return client.get("/millsandgoonsadmin").text
 
 
-def test_paid_chapters_never_reach_an_unpaid_browser(client):
+def test_paid_chapters_never_reach_a_locked_browser(client):
     _add_gated_book(client)
     page = client.get("/millsandgoons/b/gated").text
     assert "Free words here." in page
@@ -390,31 +392,6 @@ def test_paid_chapters_never_reach_an_unpaid_browser(client):
     assert "2 more chapters behind this" in page
 
 
-def test_unlock_with_the_code_opens_the_whole_book(client):
-    _add_gated_book(client)
-    code = [ln for ln in client.get("/millsandgoonsadmin").text.splitlines()
-            if "code <b>" in ln][0].split("<b>")[1].split("</b>")[0]
-
-    bad = client.post("/millsandgoons/b/gated/unlock", data={"code": "WRONG1"},
-                      follow_redirects=False)
-    assert bad.status_code == 303 and bad.headers["location"].endswith("?bad=1")
-    assert "mg_unlock_gated" not in bad.headers.get("set-cookie", "")
-    assert "Paid words here." not in client.get("/millsandgoons/b/gated").text
-
-    ok = client.post("/millsandgoons/b/gated/unlock", data={"code": code.lower()})
-    assert ok.status_code == 200
-    page = client.get("/millsandgoons/b/gated").text
-    assert "Paid words here." in page and "More paid words." in page
-    assert "Unlock on Telegram" not in page          # gate is gone
-
-
-def test_a_forged_cookie_does_not_unlock(client):
-    _add_gated_book(client)
-    client.cookies.set("mg_unlock_gated", "AAAAAA")
-    assert "Paid words here." not in client.get("/millsandgoons/b/gated").text
-    client.cookies.clear()
-
-
 def test_shelf_marks_gated_books_locked(client):
     _add_gated_book(client)
     client.post("/millsandgoonsadmin", data={"title": "Open", "text": GATED,
@@ -422,19 +399,33 @@ def test_shelf_marks_gated_books_locked(client):
     shelf = client.get("/millsandgoons").text
     assert shelf.count("free</span>") == 1           # only the gated one is chipped
 
+    # and the chip clears once the book is opened
+    client.post("/millsandgoonsadmin/b/gated",
+                data={"title": "Gated", "free_chapters": 1, "unlocked": "1"})
+    assert "free</span>" not in client.get("/millsandgoons").text
 
-def test_admin_settings_and_regenerated_code(client):
+
+def test_admin_can_point_the_gate_at_another_telegram_handle(client):
     _add_gated_book(client)
     client.post("/millsandgoonsadmin/settings",
                 data={"telegram": "@otherhandle", "terms": "Library terms"})
     assert "https://t.me/otherhandle" in client.get("/millsandgoons/b/gated").text
 
-    before = client.get("/millsandgoonsadmin/b/gated").text
-    old_code = before.split('class="code">')[1].split("<")[0]
+
+def test_admin_checkbox_opens_and_recloses_the_book(client):
+    _add_gated_book(client)
+    assert "Paid words here." not in client.get("/millsandgoons/b/gated").text
+
     client.post("/millsandgoonsadmin/b/gated",
-                data={"title": "Gated", "free_chapters": 1, "regenerate": "1"})
-    after = client.get("/millsandgoonsadmin/b/gated").text
-    assert after.split('class="code">')[1].split("<")[0] != old_code
+                data={"title": "Gated", "free_chapters": 1, "unlocked": "1"})
+    page = client.get("/millsandgoons/b/gated").text
+    assert "Paid words here." in page and "More paid words." in page
+    assert "Unlock on Telegram" not in page          # the gate is gone
+    assert "unlocked" in client.get("/millsandgoonsadmin").text
+
+    # unticking puts the gate back
+    client.post("/millsandgoonsadmin/b/gated", data={"title": "Gated", "free_chapters": 1})
+    assert "Paid words here." not in client.get("/millsandgoons/b/gated").text
 
 
 def test_book_terms_override_library_terms(client):
@@ -497,19 +488,14 @@ def test_books_host_admin_lives_at_slash_admin(books_client):
     assert r.headers["location"] == "/admin/b/gated?flash=Saved."
 
 
-def test_books_host_unlock_round_trip_stays_on_short_paths(books_client):
+def test_books_host_gate_uses_short_paths(books_client):
     books_client.post("/admin", data={"title": "Gated", "text": GATED, "free_chapters": 1})
-    code = books_client.get("/admin").text.split("code <b>")[1].split("</b>")[0]
-
     page = books_client.get("/b/gated").text
-    assert 'action="/b/gated/unlock"' in page and "Paid words here." not in page
-
-    bad = books_client.post("/b/gated/unlock", data={"code": "NOPE22"},
-                            follow_redirects=False)
-    assert bad.headers["location"] == "/b/gated?bad=1"
-
-    ok = books_client.post("/b/gated/unlock", data={"code": code}, follow_redirects=False)
-    assert ok.headers["location"] == "/b/gated"
+    assert "Paid words here." not in page
+    assert "https://t.me/onepunchcall" in page
+    assert "millsandgoons" not in page
+    books_client.post("/admin/b/gated", data={"title": "Gated", "free_chapters": 1,
+                                              "unlocked": "1"})
     assert "Paid words here." in books_client.get("/b/gated").text
 
 
@@ -558,3 +544,87 @@ def test_without_books_host_nothing_changes(client):
     assert client.get("/b/mills-goons").status_code == 404
     assert client.get("/admin").status_code == 404
     assert client.get("/board").status_code == 200
+
+# ----------------------------------------------------------------- covers
+
+GIF = base64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+
+def test_cover_src_prefers_the_upload_then_the_first_picture():
+    assert cover_src({"slug": "b", "cover_file": "cover.png", "cover_v": 2}) \
+        == "/b/b/cover?v=2"
+    assert cover_src({"slug": "b", "blocks": [{"t": "p", "x": "hi"},
+                                              {"t": "img", "x": "img001.png"}]}) \
+        == "/b/b/media/img001.png"
+    assert cover_src({"slug": "b", "blocks": []}) == ""
+
+
+def test_library_cover_survives_a_content_replacement(tmp_path):
+    lib = Library(str(tmp_path / "ebooks"))
+    lib.save("b", "B", "", parse_text("Chapter 1\n\nOne."), {})
+    lib.set_cover("b", "art.png", PNG)
+    assert lib.cover_path("b").read_bytes() == PNG
+    assert lib.get("b")["cover_v"] == 1
+
+    # replacing the text (and therefore the media folder) leaves it alone
+    lib.save("b", "B", "", parse_text("Chapter 1\n\nTwo."), {"img001.png": PNG})
+    assert lib.cover_path("b").read_bytes() == PNG
+
+    # a new upload in another format replaces the old file, not adds to it
+    lib.set_cover("b", "art.gif", GIF)
+    assert lib.get("b")["cover_file"] == "cover.gif"
+    assert lib.cover_path("b").read_bytes() == GIF
+    assert lib.get("b")["cover_v"] == 2          # bumped, so caches miss
+    assert sorted(p.name for p in (tmp_path / "ebooks" / "b").glob("cover.*")) == ["cover.gif"]
+
+    lib.clear_cover("b")
+    assert lib.cover_path("b") is None and lib.get("b")["cover_file"] == ""
+
+
+def test_library_rejects_a_cover_that_is_not_an_image(tmp_path):
+    lib = Library(str(tmp_path / "ebooks"))
+    lib.save("b", "B", "", parse_text("Hi."), {})
+    with pytest.raises(ValueError, match="PNG"):
+        lib.set_cover("b", "notes.pdf", b"%PDF-")
+    with pytest.raises(ValueError, match="empty or too large"):
+        lib.set_cover("b", "art.png", b"")
+
+
+def test_admin_uploads_a_cover_and_the_shelf_shows_it(client):
+    client.post("/millsandgoonsadmin",
+                data={"title": "Mills & Goons", "text": SAMPLE},
+                files={"coverfile": ("art.png", PNG, "image/png")})
+
+    shelf = client.get("/millsandgoons").text
+    assert "/millsandgoons/b/mills-goons/cover?v=1" in shelf
+
+    img = client.get("/millsandgoons/b/mills-goons/cover")
+    assert img.status_code == 200 and img.content == PNG
+    assert img.headers["content-type"] == "image/png"
+
+
+def test_admin_replaces_and_removes_a_cover(client):
+    client.post("/millsandgoonsadmin", data={"title": "Mills & Goons", "text": SAMPLE})
+    assert client.get("/millsandgoons/b/mills-goons/cover").status_code == 404
+
+    client.post("/millsandgoonsadmin/b/mills-goons", data={"title": "Mills & Goons"},
+                files={"coverfile": ("art.png", PNG, "image/png")})
+    assert client.get("/millsandgoons/b/mills-goons/cover").content == PNG
+    assert 'name="remove_cover"' in client.get("/millsandgoonsadmin/b/mills-goons").text
+
+    client.post("/millsandgoonsadmin/b/mills-goons",
+                data={"title": "Mills & Goons", "remove_cover": "1"})
+    assert client.get("/millsandgoons/b/mills-goons/cover").status_code == 404
+
+
+def test_admin_rejects_a_bad_cover_upload(client):
+    client.post("/millsandgoonsadmin", data={"title": "Mills & Goons", "text": SAMPLE})
+    r = client.post("/millsandgoonsadmin/b/mills-goons", data={"title": "Mills & Goons"},
+                    files={"coverfile": ("notes.pdf", b"%PDF-", "application/pdf")})
+    assert r.status_code == 400
+
+
+def test_docx_first_picture_still_covers_a_book_with_no_upload(client):
+    client.post("/millsandgoonsadmin", data={"title": "Pics"},
+                files={"bookfile": ("p.docx", make_docx(), "application/octet-stream")})
+    assert "/millsandgoons/b/pics/media/img001.png" in client.get("/millsandgoons").text
