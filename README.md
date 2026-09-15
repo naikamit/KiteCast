@@ -79,6 +79,12 @@ deployment, one disk, two faces; leave the variable empty and nothing
 changes. Point the domain at the host with an A record for the apex and a
 CNAME for `www` (your platform's dashboard gives the exact values).
 
+**Ear trainer (`/ear`).** A voice-only interval ear trainer, served as static
+files from the `ear/` directory at `/ear` on both hostnames — so in production,
+`https://millsandgoon.com/ear`. It is a self-contained PWA with no templates,
+no database and nothing shared with the trading side; Chrome on Android will
+install it to the home screen. See `ear/README.md`.
+
 **Paid unlock.** A book can give away its first N chapters and gate the rest.
 The locked chapters are withheld *server-side* — they never reach a locked
 browser, so View Source doesn't defeat the wall. When the reader turns past

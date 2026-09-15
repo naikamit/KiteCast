@@ -4,6 +4,7 @@ mirror/redirect routes are token-scoped. The console itself is
 unauthenticated — keep the URL private."""
 
 import logging
+import mimetypes
 import threading
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, PlainTextResponse,
                                RedirectResponse)
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import basket
@@ -63,6 +65,8 @@ def books_path(path: str) -> str | None:
         return "/millsandgoonsadmin" + path[len("/admin"):]
     if path == "/b" or path.startswith("/b/"):
         return "/millsandgoons" + path
+    if path == "/ear" or path.startswith("/ear/"):
+        return path          # the ear trainer, same path on either hostname
     if path in _BOOKS_PASSTHROUGH or path.startswith("/millsandgoons"):
         return path          # the long URLs keep working if one gets shared
     return None
@@ -529,6 +533,19 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         if icon_png.exists():
             return FileResponse(icon_png, media_type="image/png")
         return FileResponse(static_dir / "favicon.svg", media_type="image/svg+xml")
+
+    # ---- ear trainer: a static PWA at /ear, served on both hostnames ----
+    #
+    # Its own self-contained directory at the repo root — no templates, no
+    # database, nothing shared with the trading side. html=True serves
+    # index.html for /ear/ and redirects /ear to it.
+
+    ear_dir = Path(__file__).resolve().parent.parent / "ear"
+    if ear_dir.is_dir():
+        # Starlette guesses from the extension, and without this Chrome gets
+        # the manifest as octet-stream and refuses to offer installation.
+        mimetypes.add_type("application/manifest+json", ".webmanifest")
+        app.mount("/ear", StaticFiles(directory=ear_dir, html=True), name="ear")
 
     # ---- friend side: one-tap mirror page ----
 

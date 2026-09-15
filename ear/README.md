@@ -4,22 +4,26 @@ A rebuild of the Beato ear trainer's Intervals chapter with no visual
 interface. You hear an interval, you say what it is. The screen is a monitor,
 not a control surface — everything is reachable by voice.
 
-Target deployment: `millsandboon.com/ear`. Static files, no backend.
+Target deployment: `millsandgoon.com/ear`. Static files, no backend.
 
 ## Installing it on a phone
 
-The app is a PWA, so Chrome on Android will install it to the home screen and
-run it full-screen with the microphone intact. It needs an HTTPS origin —
-`file://` and plain-HTTP LAN addresses will not get microphone access.
+Served by the KiteCast app at `/ear` on both its hostnames, so in production
+that is `https://millsandgoon.com/ear`. The app mounts this directory as static
+files; there is no separate host or build step, and deploying the app deploys
+this with it.
 
-Upload the whole `ear/` directory to `millsandboon.com/ear`, open it in Chrome
-on the phone, then menu → *Add to Home screen* / *Install app*. Paths are all
-relative, so it works at any subpath without changes.
+It is a PWA, so Chrome on Android offers *Install app* and runs it full-screen
+from the home screen with the microphone intact. HTTPS is required — a plain
+HTTP or LAN address gets no microphone.
 
-While a session runs it holds a screen wake lock, since a sleeping screen
-would otherwise end the drill. Backgrounding the app still stops recognition —
-Web Speech does not survive being backgrounded, which is the main reason the
-commute case wants a native build rather than this.
+All paths are relative and the service worker scopes itself to `/ear/`, so it
+works unchanged at that subpath.
+
+While a session runs it holds a screen wake lock, since a sleeping screen would
+otherwise end the drill. Backgrounding the app still stops recognition — Web
+Speech does not survive being backgrounded, which is the main reason the commute
+case wants a native build rather than this.
 
 ## Running it locally
 
