@@ -175,8 +175,42 @@ button:hover{filter:brightness(1.1)}
   select{width:100%}
 }
 
+/* ---- foldable + phone form factors ----------------------------------
+   A Fold has two very different screens and switches between them live:
+   a narrow cover panel, and a large near-square inner display. Both are
+   just viewport sizes, so this is all CSS — nothing to detect. */
+
+/* cover panel: narrow and tall */
+@media (max-width:360px){
+  body{padding:0 14px}
+  .wrap{padding-block:22px 40px;gap:18px}
+  .panel{padding:26px 14px 22px;border-radius:14px}
+  .readout{font-size:clamp(24px,8vw,30px)}
+  .hint code{font-size:11px}
+  h1{font-size:20px}
+}
+
+/* inner display: keep the readout glanceable on a big screen */
+@media (min-width:700px){
+  .wrap{max-width:700px}
+  .readout{font-size:46px}
+  .panel{padding:52px 34px 40px}
+  .vocab p{font-size:17px}
+}
+
+/* unfolded and held in landscape: don't let the panel eat the viewport */
+@media (orientation:landscape) and (max-height:560px){
+  .wrap{padding-block:18px 28px;gap:14px}
+  .panel{padding:20px 22px 18px}
+  .readout{font-size:clamp(24px,5vh,32px)}
+  .mic{margin-top:12px}
+  #startWrap{margin-top:14px}
+}
+
 </style>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..600,0..100,0..1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..600,0..100,0..1&display=swap">
 
 <div class="wrap">
 
@@ -218,6 +252,13 @@ button:hover{filter:brightness(1.1)}
   </footer>
 
 </div>
+
+<script>
+  // Installable from the home screen; harmless where it isn't available.
+  if ('serviceWorker' in navigator) {
+    addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  }
+</script>
 
 <script src="audio.js"></script>
 <script src="intervals.js"></script>

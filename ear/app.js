@@ -48,7 +48,7 @@ function say(text, rate = 1.05, tone) {
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 /* ---------- speech in -------------------------------------------------- */
-let rec = null, recActive = false, wantListening = false;
+let rec = null, recActive = false, wantListening = false, restartDelay = 0;
 
 function initRecognition() {
   if (!SR) return false;
@@ -63,8 +63,13 @@ function initRecognition() {
   rec.onend = () => {
     recActive = false;
     setMic(false);
-    // Chrome ends the stream on its own schedule; keep it alive.
-    if (wantListening) { try { rec.start(); } catch (e) {} }
+    // Android Chrome ignores `continuous` and ends after every utterance, so
+    // the restart is the normal path, not the exception. Back off only on a
+    // real error, otherwise restarting slowly would swallow answers.
+    if (!wantListening) return;
+    setTimeout(() => {
+      if (wantListening && !recActive) { try { rec.start(); } catch (e) {} }
+    }, restartDelay);
   };
 
   rec.onerror = (e) => {
@@ -72,6 +77,10 @@ function initRecognition() {
       wantListening = false;
       el('mic').classList.add('hidden');
       showFallback();
+    } else if (e.error === 'no-speech' || e.error === 'aborted') {
+      restartDelay = 0;
+    } else {
+      restartDelay = Math.min(restartDelay ? restartDelay * 2 : 400, 4000);
     }
   };
 
@@ -82,6 +91,7 @@ function initRecognition() {
 
     if (!res.isFinal) { el('heard').textContent = alts[0] || ''; return; }
     el('heard').textContent = alts[0] || '';
+    restartDelay = 0;
     if (State.speaking) return;      // don't let our own prompts feed back
     handleUtterance(alts);
   };
@@ -328,12 +338,33 @@ async function jumpTo(lesson) {
   if (State.mode === 'listen') runListenMode(); else askQuestion();
 }
 
+/* ---------- screen wake lock ------------------------------------------- */
+let wakeLock = null;
+
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (e) { /* unsupported or refused; the drill still runs */ }
+}
+
+document.addEventListener('visibilitychange', () => {
+  // Android drops the lock whenever the app is backgrounded.
+  if (document.visibilityState === 'visible' && State.running) keepAwake(true);
+});
+
 /* ---------- session ---------------------------------------------------- */
 async function startSession() {
   AudioEngine.resume();
   const haveVoice = rec || initRecognition();
   State.running = true;
   State.phase = 'idle';
+  keepAwake(true);
   el('startWrap').classList.add('hidden');
   if (haveVoice) {
     startListening();
@@ -353,6 +384,7 @@ async function stopSession() {
   clearTimeout(silenceTimer);
   AudioEngine.stopAll();
   stopListening();
+  keepAwake(false);
   const s = State.stats;
   if (s.total) {
     const pct = Math.round(100 * s.correct / s.total);

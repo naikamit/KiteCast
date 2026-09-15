@@ -6,7 +6,22 @@ not a control surface — everything is reachable by voice.
 
 Target deployment: `millsandboon.com/ear`. Static files, no backend.
 
-## Running it
+## Installing it on a phone
+
+The app is a PWA, so Chrome on Android will install it to the home screen and
+run it full-screen with the microphone intact. It needs an HTTPS origin —
+`file://` and plain-HTTP LAN addresses will not get microphone access.
+
+Upload the whole `ear/` directory to `millsandboon.com/ear`, open it in Chrome
+on the phone, then menu → *Add to Home screen* / *Install app*. Paths are all
+relative, so it works at any subpath without changes.
+
+While a session runs it holds a screen wake lock, since a sleeping screen
+would otherwise end the drill. Backgrounding the app still stops recognition —
+Web Speech does not survive being backgrounded, which is the main reason the
+commute case wants a native build rather than this.
+
+## Running it locally
 
 Speech recognition needs a secure origin, so `file://` will not work:
 
@@ -55,6 +70,7 @@ accepted and discarded. Flip this if it should be scored.
 | `body.html` | shared markup fragment |
 | `index.html` | deployable page (built from `body.html` + `style.css`) |
 | `artifact.html` | same page built for Claude Artifact hosting |
+| `manifest.webmanifest`, `sw.js`, `icons/` | PWA install and offline shell |
 
 Design is dark-first — this gets used in dim rooms and on headphones at night —
 with a full light theme rather than an inversion. The screen is an instrument

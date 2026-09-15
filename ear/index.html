@@ -4,10 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Say the Interval</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14100e" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Voice-only interval ear training. Hear an interval, say what it is.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..600,0..100,0..1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..600,0..100,0..1&display=swap">
 
 <div class="wrap">
 
@@ -49,6 +58,13 @@
   </footer>
 
 </div>
+
+<script>
+  // Installable from the home screen; harmless where it isn't available.
+  if ('serviceWorker' in navigator) {
+    addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  }
+</script>
 
 <script src="audio.js"></script>
 <script src="intervals.js"></script>
