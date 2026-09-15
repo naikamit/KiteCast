@@ -100,6 +100,19 @@ The interval table exists in both `kitecast/ear.py` and `intervals.js` — Pytho
 so the server can validate and report, JavaScript so the drill runs offline.
 `tests/test_ear.py` parses the JS and fails if the two ever disagree.
 
+## The voice
+
+Calm and unhurried: rate 0.88, pitch slightly under neutral, and a neural
+en-US voice where the device has one. "No accent" in practice means General
+American, so the picker takes en-US first and lets en-GB, en-AU and en-IN fall
+to the back; the utterance carries `lang` too, in case no voice object matched.
+
+It announces as little as possible. The lesson is on screen, so saying it
+would be redundant — and that sentence was what the app used to hear itself
+say and loop on. Pressing Start just starts; jumping lessons just jumps. What
+is left is what you cannot see: the answer when you miss one, the yes/no
+question, and whatever you asked for.
+
 ## The log
 
 A panel at the foot of the page records timings for every step: when the

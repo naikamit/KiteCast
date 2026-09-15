@@ -1,13 +1,13 @@
 /* Regression harness for the self-echo loop.
  *
- * The app's spoken prompts name the lesson ("Lesson 1. Harmonic, Seconds."),
- * and a lesson name is a navigation command. On a phone the speaker reaches
- * the microphone, so the app heard itself, jumped, re-announced, and looped:
- * 85 utterances in 6 seconds.
+ * The app used to announce the lesson, and a lesson name is a navigation
+ * command. On a phone the speaker reaches the microphone, so it heard itself,
+ * jumped, re-announced and looped: 85 utterances in six seconds.
  *
- * The stubs below close that same loop — the fake synthesiser feeds whatever
- * it says back into the fake recogniser — so the bug reproduces here if the
- * mute gate is ever removed.
+ * The announcement is gone, so this provokes speech with "help" instead — the
+ * sharpest case available, since that sentence contains repeat, skip, score
+ * and pause. The stubs close the loop: the fake synthesiser feeds whatever it
+ * says back into the fake recogniser.
  *
  *   cd ear && python3 -m http.server 8811 &
  *   npm i playwright && node selfecho.test.js
@@ -66,22 +66,40 @@ const live = () => { const r = window.__recs[window.__recs.length-1]; return r &
   const fails = [];
 
   await pg.click('#start');
-  await pg.waitForTimeout(120);
+  await pg.waitForTimeout(1500);
 
-  // While the app is talking, the microphone must be shut.
+  // Nothing is announced on start any more, so provoke speech instead. "help"
+  // is the sharpest case there is: the sentence it speaks literally contains
+  // repeat, skip, score and pause, so an app that hears itself would fire all
+  // four and never stop.
+  await pg.evaluate(() => window.__recs[window.__recs.length-1].feed('help'));
+  await pg.waitForTimeout(150);
+
   const openWhileSpeaking = await pg.evaluate(live);
   console.log('recogniser running while speaking:', openWhileSpeaking, '(want false)');
   if (openWhileSpeaking) fails.push('mic open while the app speaks');
 
-  await pg.waitForTimeout(1200);           // gate reopens ~700ms after onend
-  const prompt = await pg.evaluate(() => window.__spoken[0]);
-  console.log('first prompt spoken:', JSON.stringify(prompt));
+  await pg.waitForTimeout(1500);
+  const prompt = await pg.evaluate(() => window.__spoken[window.__spoken.length-1]);
+  console.log('prompt spoken:', JSON.stringify(prompt));
+  if (!prompt || !/repeat/.test(prompt)) fails.push('help prompt not spoken');
 
-  // The loop is now self-sustaining if the bug is present: nothing more is
+  // The loop is self-sustaining if the bug is present: nothing more is
   // injected, the app simply hears whatever it says.
-  const before = await pg.evaluate(() => ({ n: State.lesson.n, said: window.__spoken.length }));
+  const snap = () => pg.evaluate(() => ({
+    n: State.lesson.n,
+    said: window.__spoken.length,
+    // The real harm is the app obeying its own words: "repeat" replays,
+    // "skip" scores a miss. Neither necessarily speaks, so count them.
+    replays: State.current ? State.current.replays : 0,
+    scored: State.stats.total
+  }));
+  const before = await snap();
   await pg.waitForTimeout(6000);
-  const after = await pg.evaluate(() => ({ n: State.lesson.n, said: window.__spoken.length }));
+  const after = await snap();
+  console.log(`commands obeyed from our own speech: replays +${after.replays-before.replays}, scored +${after.scored-before.scored} (want 0, 0)`);
+  if (after.replays > before.replays) fails.push('obeyed "repeat" from its own prompt');
+  if (after.scored > before.scored) fails.push('obeyed "skip" from its own prompt');
 
   console.log(`lesson ${before.n} -> ${after.n}  (want unchanged)`);
   console.log(`utterances over 6s: ${before.said} -> ${after.said}  (want no growth)`);

@@ -49,11 +49,25 @@ const since = (t) => t ? '+' + Math.round(performance.now() - t) + 'ms' : '';
 
 /* ---------- speech out ------------------------------------------------ */
 let voice = null;
+
+// Unhurried. The default 1.0 reads as brisk, which is the wrong register for
+// something you are concentrating hard on.
+const VOICE_RATE = 0.88;
+const VOICE_PITCH = 0.96;
+
 function pickVoice() {
   const vs = speechSynthesis.getVoices();
-  voice = vs.find(v => /en-(GB|US)/.test(v.lang) && /Google|Natural|Samantha|Daniel/i.test(v.name))
-       || vs.find(v => v.lang.startsWith('en'))
-       || vs[0] || null;
+  if (!vs.length) return;
+  // No accent, in practice, means General American — so en-US first and let
+  // the regional voices (en-GB, en-AU, en-IN…) fall to the back. Within that,
+  // a neural voice is markedly calmer than the old formant synths.
+  const pick = (list) => list.find(v => /natural|neural/i.test(v.name))
+                      || list.find(v => /google/i.test(v.name))
+                      || list.find(v => v.default)
+                      || list[0];
+  const us = vs.filter(v => /^en[-_]us$/i.test(v.lang));
+  const en = vs.filter(v => /^en[-_]/i.test(v.lang));
+  voice = pick(us) || pick(en) || vs[0] || null;
 }
 if (typeof speechSynthesis !== 'undefined') {
   pickVoice();
@@ -62,7 +76,7 @@ if (typeof speechSynthesis !== 'undefined') {
 
 let lastSpoken = '', lastSpokenAt = 0, speakGate = null;
 
-function say(text, rate = 1.05, tone) {
+function say(text, rate = VOICE_RATE, tone) {
   return new Promise(resolve => {
     if (!text) return resolve();
     setStatus(text, tone);
@@ -78,8 +92,9 @@ function say(text, rate = 1.05, tone) {
 
     const u = new SpeechSynthesisUtterance(text);
     if (voice) u.voice = voice;
+    u.lang = 'en-US';          // steers the fallback voice away from a regional one
     u.rate = rate;
-    u.pitch = 1.0;
+    u.pitch = VOICE_PITCH;
     let finished = false;
     const done = () => {
       if (finished) return;
@@ -367,7 +382,7 @@ async function askConfirm(r) {
   State.phase = 'confirming';
   State.pending = r;
   const first = INTERVALS[r.options[0]];
-  await say(first.qual === 'minor' ? 'Minor? Yes or no.' : first.qual + '? Yes or no.');
+  await say('Was it ' + first.qual + '?');
   State.phase = 'confirming';
   setStatus('yes or no?');
   silenceTimer = setTimeout(() => {
@@ -410,13 +425,13 @@ async function resolveAnswer(id, timedOut) {
   if (correct) {
     AudioEngine.chime(true);
     setStatus(truth.name, 'ok');
-    await wait(900);
+    await wait(1150);
   } else {
     AudioEngine.stopAll();
-    await say('No. ' + truth.name + '.', 1.05, 'bad');
+    await say('Not quite. ' + truth.name + '.', VOICE_RATE, 'bad');
     await wait(120);
     const ms = AudioEngine.playInterval(q.voice, q.root, q.semi, State.lesson.mode, q.descending);
-    await wait(ms + 200);
+    await wait(ms + 550);
   }
   if (State.running && State.mode === 'drill') askQuestion();
 }
@@ -444,19 +459,19 @@ async function runCommand(id) {
     case 'stop':
       return stopSession();
     case 'help':
-      return say('Say the interval. Or say repeat, skip, score, pause, or lesson three.');
+      return say('Just name what you hear. You can also say repeat, skip, score, or pause.');
     case 'listen':
       if (State.mode === 'listen') return;
       State.mode = 'listen';
       clearTimeout(silenceTimer);
       AudioEngine.stopAll();
-      await say('Listen mode.');
+      await say('Just listening.');
       return runListenMode();
     case 'drill':
       if (State.mode === 'drill') return;
       State.mode = 'drill';
       AudioEngine.stopAll();
-      await say('Drilling.');
+      await say('Back to it.');
       return askQuestion();
   }
 }
@@ -466,7 +481,7 @@ async function speakScore() {
   if (!s.total) return say('Nothing scored yet.');
   const pct = Math.round(100 * s.correct / s.total);
   const fl = Math.round(100 * s.firstListen / s.total);
-  await say(`${s.correct} of ${s.total}. ${pct} percent. ${fl} percent on first hearing.`);
+  await say(`${s.correct} of ${s.total}. That's ${pct} percent, and ${fl} percent on first hearing.`);
   if (State.mode === 'drill' && State.running) askQuestion();
 }
 
@@ -479,7 +494,7 @@ async function jumpTo(lesson) {
   clearTimeout(silenceTimer);
   AudioEngine.stopAll();
   renderLesson();
-  await say('Lesson ' + lesson.n + '. ' + lesson.title.replace(':', ','));
+  await wait(250);
   if (State.mode === 'listen') runListenMode(); else askQuestion();
 }
 
@@ -593,8 +608,9 @@ async function startSession() {
     el('mic').classList.add('hidden');
     showFallback();
   }
-  await say('Lesson ' + State.lesson.n + '. ' + State.lesson.title.replace(':', ',') + '. Name each interval.', 1.05);
-  await wait(250);
+  // No preamble: the lesson is on screen, and announcing it was both
+  // redundant and the sentence the app used to hear itself say and loop on.
+  await wait(350);
   askQuestion();
 }
 
@@ -610,7 +626,7 @@ async function stopSession() {
   const s = State.stats;
   if (s.total) {
     const pct = Math.round(100 * s.correct / s.total);
-    await say(`Done. ${s.correct} of ${s.total}, ${pct} percent.`);
+    await say(`That's ${s.correct} of ${s.total}. ${pct} percent.`);
   } else {
     await say('Stopped.');
   }
