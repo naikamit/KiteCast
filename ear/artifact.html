@@ -263,6 +263,9 @@ button.ghost:hover{color:var(--ink);border-color:var(--brass-soft);filter:none}
 .log li.k-bad  .k{color:var(--felt)}
 .log li.k-warn .k{color:var(--felt)}
 
+/* the standing note about screen-off behaviour, unlike the transient one */
+#lockNote{color:var(--ink-faint);margin-top:14px;max-width:34em}
+
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -285,6 +288,7 @@ button.ghost:hover{color:var(--ink);border-color:var(--brass-soft);filter:none}
     <p class="source" id="voice"></p>
     <div id="startWrap"><button id="start">Start</button></div>
     <p class="paused" id="pausedNote" hidden>microphone off — press Resume to carry on</p>
+    <p class="paused" id="lockNote">with the screen off it keeps playing and naming intervals — answering needs the screen on</p>
     <p class="mic" id="mic"><span class="dot"></span>microphone</p>
     <div class="fallback hidden" id="fallback">
       <input id="typed" placeholder="Type the interval, then Enter" autocomplete="off" spellcheck="false">

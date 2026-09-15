@@ -9,6 +9,8 @@ const AudioEngine = (() => {
   let ctx = null;
   let master = null;
   let wet = null;
+  let sink = null;          // <audio> element carrying our output
+  let keepalive = null;
   const cache = new Map();
 
   function init() {
@@ -23,9 +25,54 @@ const AudioEngine = (() => {
     wet = ctx.createGain();
     wet.gain.value = 0.17;
     conv.connect(wet);
-    wet.connect(ctx.destination);
     master.connect(conv);
+
+    routeThroughMediaElement();
     return ctx;
+  }
+
+  /* Android stops a backgrounded page dead: audio suspended, timers throttled
+     to once a minute. A page that is *playing media* is exempt, so the graph
+     is routed into an <audio> element rather than straight to the speakers.
+     That is also what puts the app on the lock screen, where MediaSession can
+     give it controls. */
+  function routeThroughMediaElement() {
+    try {
+      const dest = ctx.createMediaStreamDestination();
+      master.connect(dest);
+      wet.connect(dest);
+
+      // A media element carrying pure silence can still be judged inaudible,
+      // so hold an infrasonic tone well below hearing to keep the tab alive.
+      keepalive = ctx.createOscillator();
+      const kg = ctx.createGain();
+      keepalive.frequency.value = 30;
+      kg.gain.value = 0.0002;
+      keepalive.connect(kg);
+      kg.connect(dest);
+      keepalive.start();
+
+      sink = document.createElement('audio');
+      sink.srcObject = dest.stream;
+      sink.autoplay = true;
+      sink.loop = true;
+      sink.setAttribute('playsinline', '');
+      sink.style.display = 'none';
+      document.body.appendChild(sink);
+      sink.play().catch(() => {});
+    } catch (e) {
+      // No media-element route: still works, just not with the screen off.
+      master.connect(ctx.destination);
+      wet.connect(ctx.destination);
+      sink = null;
+    }
+  }
+
+  const backgroundCapable = () => !!sink;
+
+  function nudge() {
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    if (sink && sink.paused) sink.play().catch(() => {});
   }
 
   function makeImpulse(seconds, decay) {
@@ -232,5 +279,6 @@ const AudioEngine = (() => {
   }
 
   return { init, resume, playInterval, chime, stopAll, VOICES, midiToFreq,
+           nudge, backgroundCapable,
            _renderPiano: renderPiano, _renderPluck: renderPluck };
 })();

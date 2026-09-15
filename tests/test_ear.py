@@ -363,3 +363,36 @@ def test_log_label_does_not_inherit_the_hanging_indent():
 def test_the_log_never_reveals_the_interval_being_asked():
     play = APP_JS[APP_JS.index("function playCurrent()"):APP_JS.index("/* ---------- main loop")]
     assert "INTERVALS[q.id]" not in play and "truth.name" not in play
+
+
+# ------------------------------------------------- screen off (commute case)
+
+AUDIO_JS = (EAR_DIR / "audio.js").read_text()
+
+
+def test_audio_is_routed_through_a_media_element():
+    """A backgrounded page has its audio suspended and its timers throttled to
+    once a minute. A page playing media is exempt, which is the only way the
+    commute case works at all."""
+    assert "createMediaStreamDestination" in AUDIO_JS
+    assert "document.createElement('audio')" in AUDIO_JS
+    assert "backgroundCapable" in AUDIO_JS
+
+
+def test_a_silent_stream_would_not_count_as_playing():
+    """Hence the infrasonic keepalive tone."""
+    assert "keepalive" in AUDIO_JS
+
+
+def test_screen_off_falls_back_to_listen_mode():
+    """The microphone is gone when the screen locks, so a drill left running
+    would sit there deaf."""
+    assert "visibilitychange" in APP_JS
+    assert "autoListen" in APP_JS
+    assert "screen off — no microphone, switching to listen mode" in APP_JS
+
+
+def test_the_lock_screen_gets_controls():
+    assert "mediaSession" in APP_JS
+    for action in ("'play'", "'pause'", "'nexttrack'", "'previoustrack'"):
+        assert f"setActionHandler({action}" in APP_JS
