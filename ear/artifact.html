@@ -1,0 +1,275 @@
+<title>Say the Interval</title>
+<style>
+/* Dark-first: this is used in dim rooms and on headphones at night.
+   The light theme is a full swap, not an inversion. */
+:root{
+  --ground:#14100e; --raise:#1e1815; --sunk:#100c0a;
+  --line:#2e2521; --line-soft:#231c18;
+  --ink:#f0e6d8; --ink-dim:#a1948a; --ink-faint:#6b6058;
+  --brass:#c9973f; --brass-soft:#8a6a32;
+  --patina:#7fa882; --felt:#c4635d;
+  color-scheme:dark light;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --ground:#f4efe4; --raise:#fbf7ef; --sunk:#eae3d5;
+    --line:#ddd3c1; --line-soft:#e8e0d1;
+    --ink:#241d17; --ink-dim:#6b6058; --ink-faint:#9b9086;
+    --brass:#8a6420; --brass-soft:#b39257;
+    --patina:#47734e; --felt:#a3423c;
+  }
+}
+:root[data-theme="light"]{
+  --ground:#f4efe4; --raise:#fbf7ef; --sunk:#eae3d5;
+  --line:#ddd3c1; --line-soft:#e8e0d1;
+  --ink:#241d17; --ink-dim:#6b6058; --ink-faint:#9b9086;
+  --brass:#8a6420; --brass-soft:#b39257;
+  --patina:#47734e; --felt:#a3423c;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  font-size:15px; line-height:1.55;
+  padding:0 20px;
+}
+.wrap{max-width:640px;margin:0 auto;padding-block:34px 56px;
+  display:flex;flex-direction:column;gap:22px}
+.hidden{display:none!important}
+::selection{background:var(--brass);color:var(--ground)}
+:focus-visible{outline:2px solid var(--brass);outline-offset:3px;border-radius:4px}
+
+/* ---- header ---- */
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{
+  font-family:Fraunces,Georgia,serif;
+  font-size:23px;font-weight:600;margin:0;letter-spacing:-.015em;
+  font-variation-settings:"SOFT" 30,"WONK" 1;
+  text-wrap:balance;
+}
+.sub{margin:2px 0 0;font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
+select{
+  background:var(--raise);color:var(--ink);border:1px solid var(--line);
+  border-radius:7px;padding:8px 11px;font:inherit;font-size:13px;max-width:100%;cursor:pointer
+}
+
+/* ---- the panel: one big thing you can catch without looking ---- */
+.panel{
+  background:var(--raise);border:1px solid var(--line);border-radius:18px;
+  padding:38px 26px 30px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:0;
+}
+.eyebrow{
+  margin:0 0 20px;font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--brass-soft)
+}
+.readout{
+  font-family:Fraunces,Georgia,serif;
+  font-variation-settings:"SOFT" 40,"WONK" 1;
+  font-size:clamp(28px,7vw,40px);font-weight:500;line-height:1.2;
+  letter-spacing:-.025em;margin:0;min-height:1.2em;text-wrap:balance;
+  transition:color .18s ease;
+}
+.readout.ok{color:var(--patina)}
+.readout.bad{color:var(--felt)}
+.heard{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:13px;color:var(--brass);margin:16px 0 0;min-height:1.5em;
+  word-break:break-word;opacity:.9
+}
+/* At rest these are empty; don't let them hold open a void above Start. */
+.heard:empty,.source:empty{min-height:0;margin-top:0}
+.source{
+  margin:6px 0 0;font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);
+  min-height:1.4em
+}
+#startWrap{margin-top:24px}
+button{
+  background:var(--brass);color:var(--ground);border:0;border-radius:9px;
+  padding:13px 34px;font-family:inherit;font-weight:600;font-size:15px;cursor:pointer;
+  letter-spacing:.01em;transition:filter .15s ease
+}
+button:hover{filter:brightness(1.1)}
+
+.mic{
+  display:flex;align-items:center;gap:8px;margin:22px 0 0;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)
+}
+.mic .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex:none}
+.mic.on{color:var(--patina)}
+.mic.on .dot{background:var(--patina);animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{
+  0%,100%{box-shadow:0 0 0 0 rgba(127,168,130,.42)}
+  50%{box-shadow:0 0 0 7px rgba(127,168,130,0)}
+}
+@media (prefers-reduced-motion:reduce){
+  .mic.on .dot{animation:none;box-shadow:0 0 0 4px rgba(127,168,130,.28)}
+  .readout{transition:none}
+}
+
+.fallback{margin-top:18px;width:100%}
+.fallback input{
+  background:var(--sunk);border:1px solid var(--line);color:var(--ink);
+  border-radius:8px;padding:12px 14px;font:inherit;width:100%;max-width:320px;
+  text-align:center
+}
+.fallback input::placeholder{color:var(--ink-faint)}
+
+/* ---- tally: one line, not three tiles. The status is the point. ---- */
+.tally{
+  margin:0;text-align:center;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:12.5px;color:var(--ink-dim);letter-spacing:.03em;
+  font-variant-numeric:tabular-nums
+}
+
+/* ---- vocabulary at rest ---- */
+.vocab{text-align:center}
+.vocab h2{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-faint);margin:0 0 8px
+}
+.vocab p{
+  margin:0;font-family:Fraunces,Georgia,serif;font-size:16px;color:var(--ink-dim);
+  line-height:1.8;font-variation-settings:"SOFT" 30
+}
+
+/* ---- ledger: hairline rows, not cards ---- */
+.ledger{list-style:none;margin:0;padding:0}
+.ledger li{
+  display:flex;align-items:baseline;gap:12px;
+  padding:10px 2px;border-bottom:1px solid var(--line-soft);font-size:14px
+}
+.ledger li::before{
+  content:"";width:6px;height:6px;border-radius:1px;flex:none;
+  transform:translateY(-1px)
+}
+.ledger:empty{display:none}
+.ledger li:last-child{border-bottom:none}
+.ledger li.ok::before{background:var(--patina)}
+.ledger li.bad::before{background:var(--felt)}
+.ledger .truth{font-family:Fraunces,Georgia,serif;font-size:15px;font-variation-settings:"SOFT" 30}
+.ledger .given{margin-left:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:12px;color:var(--ink-faint);text-align:right}
+
+.hint{
+  color:var(--ink-faint);font-size:12.5px;line-height:1.9;margin:0;
+  border-top:1px solid var(--line);padding-top:18px
+}
+.hint code{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;
+  background:var(--sunk);padding:2px 6px;border-radius:4px;color:var(--ink-dim);
+  white-space:nowrap
+}
+.hint strong{color:var(--ink-dim);font-weight:500}
+
+@media (max-width:430px){
+  .panel{padding:30px 18px 24px}
+  header{gap:12px}
+  select{width:100%}
+}
+
+/* ---- foldable + phone form factors ----------------------------------
+   A Fold has two very different screens and switches between them live:
+   a narrow cover panel, and a large near-square inner display. Both are
+   just viewport sizes, so this is all CSS — nothing to detect. */
+
+/* cover panel: narrow and tall */
+@media (max-width:360px){
+  body{padding:0 14px}
+  .wrap{padding-block:22px 40px;gap:18px}
+  .panel{padding:26px 14px 22px;border-radius:14px}
+  .readout{font-size:clamp(24px,8vw,30px)}
+  .hint code{font-size:11px}
+  h1{font-size:20px}
+}
+
+/* inner display: keep the readout glanceable on a big screen */
+@media (min-width:700px){
+  .wrap{max-width:700px}
+  .readout{font-size:46px}
+  .panel{padding:52px 34px 40px}
+  .vocab p{font-size:17px}
+}
+
+/* unfolded and held in landscape: don't let the panel eat the viewport */
+@media (orientation:landscape) and (max-height:560px){
+  .wrap{padding-block:18px 28px;gap:14px}
+  .panel{padding:20px 22px 18px}
+  .readout{font-size:clamp(24px,5vh,32px)}
+  .mic{margin-top:12px}
+  #startWrap{margin-top:14px}
+}
+
+/* lifetime mastery, kept server-side — quieter than the session tally */
+.lifetime{
+  margin:-14px 0 0;text-align:center;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;color:var(--ink-faint);letter-spacing:.03em;
+  font-variant-numeric:tabular-nums
+}
+.lifetime:empty{display:none}
+
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..600,0..100,0..1&display=swap">
+
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Say the Interval</h1>
+      <p class="sub" id="lessonNum">Lesson 1 of 13</p>
+    </div>
+    <select id="lessonPicker" aria-label="Choose lesson"></select>
+  </header>
+
+  <main class="panel">
+    <p class="eyebrow" id="lessonTitle">Harmonic: Seconds</p>
+    <p class="readout" id="status">Headphones on.</p>
+    <p class="heard" id="heard"></p>
+    <p class="source" id="voice"></p>
+    <div id="startWrap"><button id="start">Start</button></div>
+    <p class="mic" id="mic"><span class="dot"></span>microphone</p>
+    <div class="fallback hidden" id="fallback">
+      <input id="typed" placeholder="Type the interval, then Enter" autocomplete="off" spellcheck="false">
+    </div>
+  </main>
+
+  <p class="tally" id="tally">not started</p>
+  <p class="lifetime" id="lifetime"></p>
+
+  <section class="vocab">
+    <h2>What you'll be naming</h2>
+    <p id="answers"></p>
+  </section>
+
+  <ol class="ledger" id="history"></ol>
+
+  <footer class="hint">
+    <strong>Answer out loud.</strong> Humming to find the note is ignored, so sing
+    all you like — only a real interval name counts. If the recogniser can't
+    separate major from minor, it asks you a yes-or-no question instead of guessing.<br>
+    Say <code>repeat</code>, <code>skip</code>, <code>score</code>, <code>listen</code>,
+    <code>drill</code>, <code>lesson 7</code>, <code>melodic sixths</code> or <code>stop</code>.
+  </footer>
+
+</div>
+
+<script>
+  // Installable from the home screen; harmless where it isn't available.
+  if ('serviceWorker' in navigator) {
+    addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  }
+</script>
+
+<script src="audio.js"></script>
+<script src="intervals.js"></script>
+<script src="app.js"></script>

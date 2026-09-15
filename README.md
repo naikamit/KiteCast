@@ -79,6 +79,22 @@ deployment, one disk, two faces; leave the variable empty and nothing
 changes. Point the domain at the host with an A record for the apex and a
 CNAME for `www` (your platform's dashboard gives the exact values).
 
+**Ear trainer (`EAR_HOST`, `/ear`).** The third app: voice-only interval
+practice. You hear an interval, you say what it is — there is nothing to look
+at and nothing to tap. It lives at `/ear` on every hostname, and setting
+`EAR_HOST=ear.example.com` gives it a domain of its own where it sits at `/`
+and no other app exists.
+
+The drill runs entirely in the browser: the piano and two guitars are
+synthesised there, the answers are spoken, and the lesson ladder ships with the
+page so it works offline. What the server keeps is the one thing a browser
+cannot — mastery per interval, which outlives a session, a cleared cache and a
+change of device, and which feeds the drill back so it spends your time on the
+intervals you actually miss. Identity is a cookie holding an opaque id; there
+are no accounts, and the stored row is a tally of interval counts and nothing
+else. Storage sits beside the ebook library and shares no table with it or with
+the trading side. It installs from Chrome as a PWA. See `ear/README.md`.
+
 **Paid unlock.** A book can give away its first N chapters and gate the rest.
 The locked chapters are withheld *server-side* — they never reach a locked
 browser, so View Source doesn't defeat the wall. When the reader turns past
