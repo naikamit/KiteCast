@@ -260,3 +260,6 @@ button.ghost:hover{color:var(--ink);border-color:var(--brass-soft);filter:none}
 .log li.k-ok   .k{color:var(--patina)}
 .log li.k-bad  .k{color:var(--felt)}
 .log li.k-warn .k{color:var(--felt)}
+
+/* the standing note about screen-off behaviour, unlike the transient one */
+#lockNote{color:var(--ink-faint);margin-top:14px;max-width:34em}

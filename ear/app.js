@@ -535,6 +535,7 @@ async function jumpTo(lesson) {
   clearTimeout(silenceTimer);
   AudioEngine.stopAll();
   renderLesson();
+  mediaSessionSetup();
   await wait(250);
   if (State.mode === 'listen') runListenMode(); else askQuestion();
 }
@@ -574,6 +575,74 @@ function renderLifetime(d) {
   node.textContent = `all time  ·  ${d.seen} answers  ·  ${pct}%` +
     (weak.length ? `  ·  weakest ${weak.join(', ')}` : '');
 }
+
+/* ---------- lock screen ------------------------------------------------
+   Recognition dies the moment the screen goes off — the OS takes the
+   microphone back, and no web API gets it returned. Audio survives, because
+   the graph is routed through a media element, so a session that goes into a
+   pocket becomes listen mode rather than sitting there deaf. */
+let autoListen = false;
+
+function mediaSessionSetup() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: State.mode === 'listen' ? 'Listening' : 'Interval practice',
+      artist: State.lesson.title,
+      album: 'Say the Interval',
+      artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
+    });
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (!State.running) startSession(); else if (State.paused) resumeSession();
+    });
+    navigator.mediaSession.setActionHandler('pause', () => pauseSession());
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      log('mic', 'lock screen: next');
+      if (State.mode === 'listen') { AudioEngine.stopAll(); runListenMode(); }
+      else if (State.phase === 'listening' || State.phase === 'confirming') resolveAnswer(null);
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      log('mic', 'lock screen: repeat');
+      runCommand('repeat');
+    });
+  } catch (e) { /* older browsers reject unknown actions */ }
+}
+
+function mediaSessionState() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.playbackState =
+      State.running && !State.paused ? 'playing' : 'paused';
+  } catch (e) {}
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!State.running) return;
+  if (document.visibilityState === 'hidden') {
+    if (State.paused) return;
+    stopListening();                 // it is gone anyway; stop the retry churn
+    if (State.mode === 'drill') {
+      autoListen = true;
+      State.mode = 'listen';
+      clearTimeout(silenceTimer);
+      log('mic', 'screen off — no microphone, switching to listen mode');
+      AudioEngine.stopAll();
+      runListenMode();
+    }
+  } else {
+    AudioEngine.nudge();
+    keepAwake(true);
+    if (State.paused) return;
+    startListening();
+    if (autoListen) {
+      autoListen = false;
+      State.mode = 'drill';
+      log('mic', 'screen on — drilling again');
+      AudioEngine.stopAll();
+      askQuestion();
+    }
+  }
+});
 
 /* ---------- screen wake lock ------------------------------------------- */
 let wakeLock = null;
@@ -615,6 +684,7 @@ function pauseSession() {
   setStatus('paused');
   log('mic', 'paused — microphone off');
   renderTransport();
+  mediaSessionState();
 }
 
 function resumeSession() {
@@ -624,6 +694,7 @@ function resumeSession() {
   startListening();
   log('mic', 'resumed');
   renderTransport();
+  mediaSessionState();
   if (State.mode === 'listen') runListenMode(); else askQuestion();
 }
 
@@ -642,7 +713,10 @@ async function startSession() {
   State.phase = 'idle';
   keepAwake(true);
   renderTransport();
-  log('mic', 'session started');
+  mediaSessionSetup();
+  mediaSessionState();
+  log('mic', 'session started' +
+      (AudioEngine.backgroundCapable() ? '' : ' (no background audio route)'));
   if (haveVoice) {
     startListening();
   } else {
@@ -665,6 +739,7 @@ async function stopSession() {
   keepAwake(false);
   State.paused = false;
   renderTransport();
+  mediaSessionState();
   log('mic', 'session stopped');
   const s = State.stats;
   if (s.total) {

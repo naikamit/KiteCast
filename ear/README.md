@@ -151,6 +151,34 @@ on-device models, iOS has `SFSpeechRecognizer` with `requiresOnDeviceRecognition
 and Vosk runs offline on both with a *constrained grammar* — which for a
 twelve-word vocabulary is the real prize, not just the removed round trip.
 
+## With the screen off
+
+Recognition stops when the phone locks. The OS takes the microphone back and
+no web API gets it returned — that is a platform rule, not something the app
+can work around.
+
+Audio does survive, so the app makes the most of what is left. The graph is
+routed through an `<audio>` element rather than straight to the speakers,
+which keeps a backgrounded page exempt from having its audio suspended and its
+timers throttled to once a minute, and puts the app on the lock screen with
+MediaSession controls (play, pause, next, repeat). An infrasonic keepalive
+tone runs because a media element carrying pure silence can still be judged
+inaudible.
+
+When the screen goes off mid-drill the session becomes **listen mode**: it
+keeps playing intervals and naming them, which is passive practice rather than
+recall but is real practice, and it needs nothing but ears. Unlock and it goes
+back to quizzing.
+
+Aggressive battery management can still kill it — Samsung's One UI especially.
+Setting the browser to unrestricted battery usage is the usual fix.
+
+Answering out loud with the screen off needs a native build: Android can hold
+the microphone through a foreground service typed `microphone`, and iOS through
+an `AVAudioSession` with the background audio mode. Paired with Vosk's
+constrained grammar that is also where major-versus-minor finally becomes
+reliable.
+
 ## Known limits
 
 Web Speech sends audio to Google and needs a network connection. The Android
