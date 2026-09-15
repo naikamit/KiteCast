@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ear · Intervals</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Ear <span>· intervals</span></h1>
+      <div class="num" id="lessonNum">Lesson 1 of 13</div>
+    </div>
+    <select id="lessonPicker" aria-label="Lesson"></select>
+  </header>
+
+  <div class="stage">
+    <div class="status" id="status">Put your headphones on.</div>
+    <div class="heard" id="heard"></div>
+    <div class="voice" id="voice"></div>
+    <div id="startWrap"><button id="start">Start</button></div>
+    <div class="mic" id="mic">microphone</div>
+    <div class="fallback hidden" id="fallback">
+      <input id="typed" placeholder="Type the interval, then Enter" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="grid" id="live">
+    <div class="cell"><b id="score">–</b><small>Correct</small></div>
+    <div class="cell"><b id="pct">–</b><small>Accuracy</small></div>
+    <div class="cell"><b id="first">–</b><small>First hearing</small></div>
+  </div>
+
+  <div class="answers"><span id="lessonTitle"></span><br><span id="answers"></span></div>
+
+  <ul id="history"></ul>
+
+  <div class="hint">
+    Answer out loud — <code>minor third</code>, <code>tritone</code>, <code>octave</code>.
+    Humming to find the note is ignored, so sing all you like.<br>
+    Say <code>repeat</code>, <code>skip</code>, <code>score</code>, <code>listen</code>,
+    <code>drill</code>, <code>lesson 7</code>, or <code>stop</code>.
+  </div>
+
+</div>
+
+<script src="audio.js"></script>
+<script src="intervals.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
