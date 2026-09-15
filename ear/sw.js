@@ -2,7 +2,7 @@
    The drill itself still needs a network for speech recognition — Web Speech
    is cloud-backed — but the audio engine is local, so listen mode and typed
    answers keep working offline. */
-const CACHE = 'ear-v1';
+const CACHE = 'ear-v2';
 const SHELL = [
   './', './index.html', './style.css',
   './audio.js', './intervals.js', './app.js',
@@ -40,10 +40,16 @@ self.addEventListener('fetch', (e) => {
   }
 
   if (url.origin !== location.origin) return;
+
+  // Network first for our own files. Cache-first would keep serving a stale
+  // app.js after a deploy, so a fix would never reach a phone that had already
+  // installed the app — the cache falls back only when the network is gone.
   e.respondWith(
-    caches.match(req).then(hit => hit || fetch(req).then(res => {
-      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
-      return res;
-    }).catch(() => caches.match('./index.html')))
+    fetch(req)
+      .then(res => {
+        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
+        return res;
+      })
+      .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
   );
 });
