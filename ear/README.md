@@ -75,6 +75,7 @@ accepted and discarded. Flip this if it should be scored.
 | `body.html` | shared markup fragment |
 | `index.html` | deployable page (built from `body.html` + `style.css`) |
 | `artifact.html` | same page built for Claude Artifact hosting |
+| `selfecho.test.js`, `transport.test.js` | browser harnesses (see headers) |
 | `manifest.webmanifest`, `sw.js`, `icons/` | PWA install and offline shell |
 
 ## What the server does
@@ -99,10 +100,25 @@ The interval table exists in both `kitecast/ear.py` and `intervals.js` — Pytho
 so the server can validate and report, JavaScript so the drill runs offline.
 `tests/test_ear.py` parses the JS and fails if the two ever disagree.
 
+## The log
+
+A panel at the foot of the page records timings for every step: when the
+recogniser opens and closes, how long the gap is between an utterance ending
+and the stream reopening, when the first interim transcript arrives and how
+long the final takes, and when the speech gate shuts and reopens. Copy sends
+the lot to the clipboard.
+
+"Sometimes it lags" is only diagnosable with numbers against each step, and the
+usual culprit is visible as `mic closed, reopening in Nms` — Android ends the
+stream after every utterance, and anything said during that gap is lost.
+
+It never prints the interval being asked, which would spoil the drill you are
+logging; the answer only appears once the question is resolved.
+
 ## Voice commands
 
-`repeat` · `skip` · `score` · `listen` · `drill` · `lesson 7` ·
-`melodic sixths` · `stop`
+`repeat` · `skip` · `score` · `listen` · `drill` · `pause` · `resume` ·
+`lesson 7` · `melodic sixths` · `stop`
 
 ## Known limits
 

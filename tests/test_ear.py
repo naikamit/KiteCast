@@ -296,3 +296,42 @@ def test_a_lesson_announcement_really_does_parse_as_a_command():
     norm = spoken.lower().replace(".", " ").replace(",", " ")
     assert "lesson 1" in norm
     assert _L[0].title == "Harmonic: Seconds"
+
+
+# ------------------------------------------------ transport and log (tripwires)
+#
+# Browser-level behaviour lives in ear/transport.test.js; these catch the two
+# ways the log panel silently broke while it was being built.
+
+STYLE_CSS = (EAR_DIR / "style.css").read_text()
+
+
+def test_pause_keeps_the_microphone_open():
+    """Muting while paused would leave no way to say "resume" in an app with
+    nothing to tap."""
+    assert "if (State.paused) {" in APP_JS
+    pause = APP_JS[APP_JS.index("function pauseSession("):APP_JS.index("function resumeSession(")]
+    assert "stopListening()" not in pause
+
+
+def test_pause_stops_the_drill():
+    for guard in ("async function askQuestion() {\n  if (!State.running || State.paused) return;",
+                  "async function runListenMode() {\n  if (!State.running || State.paused) return;"):
+        assert guard in APP_JS
+
+
+def test_log_rows_are_namespaced_away_from_the_mic_indicator():
+    """A bare .mic class would inherit the indicator's uppercase flex styling."""
+    assert "li.className = 'k-' + kind;" in APP_JS
+    assert ".log li.k-mic" in STYLE_CSS
+
+
+def test_log_label_does_not_inherit_the_hanging_indent():
+    """It is an inline-block, so it inherits text-indent and renders blank."""
+    block = STYLE_CSS[STYLE_CSS.index(".log .k{"):]
+    assert "text-indent:0" in block[:block.index("}")]
+
+
+def test_the_log_never_reveals_the_interval_being_asked():
+    play = APP_JS[APP_JS.index("function playCurrent()"):APP_JS.index("/* ---------- main loop")]
+    assert "INTERVALS[q.id]" not in play and "truth.name" not in play
