@@ -31,25 +31,63 @@ if (typeof speechSynthesis !== 'undefined') {
   speechSynthesis.onvoiceschanged = pickVoice;
 }
 
+let lastSpoken = '', lastSpokenAt = 0, speakGate = null;
+
 function say(text, rate = 1.05, tone) {
   return new Promise(resolve => {
     if (!text) return resolve();
     setStatus(text, tone);
+
+    // Hold the microphone shut for the whole utterance. Without this the app
+    // hears its own prompts, and since those prompts name the lesson they
+    // read as navigation commands — it tells itself to jump, forever.
+    lastSpoken = normalise(text);
+    State.speaking = true;
+    clearTimeout(speakGate);
+    muteRecognition(true);
+
     const u = new SpeechSynthesisUtterance(text);
     if (voice) u.voice = voice;
     u.rate = rate;
     u.pitch = 1.0;
-    State.speaking = true;
-    u.onend = u.onerror = () => { State.speaking = false; resolve(); };
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(bail);
+      lastSpokenAt = Date.now();
+      // Android delivers a transcript well after speech ends, so the gate has
+      // to outlive onend or the tail of our own sentence still gets through.
+      speakGate = setTimeout(() => {
+        State.speaking = false;
+        muteRecognition(false);
+      }, 700);
+      resolve();
+    };
+    // A synthesiser that never reports finishing would hold the gate shut and
+    // leave the app permanently deaf, so never wait on it indefinitely.
+    const bail = setTimeout(done, 2000 + text.length * 90);
+    u.onend = u.onerror = done;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
+  });
+}
+
+/* Anything we just said, coming back at us. A late result can land after the
+   gate reopens, so this catches the straggler — but only for a moment, or it
+   would swallow a real answer that happens to repeat the interval we named. */
+function isSelfEcho(alternatives) {
+  if (!lastSpoken || Date.now() - lastSpokenAt > 2500) return false;
+  return alternatives.some(a => {
+    const words = normalise(a).split(' ').filter(Boolean);
+    return words.length && words.every(w => lastSpoken.includes(w));
   });
 }
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 /* ---------- speech in -------------------------------------------------- */
-let rec = null, recActive = false, wantListening = false, restartDelay = 0;
+let rec = null, recActive = false, wantListening = false, restartDelay = 0, recMuted = false;
 
 function initRecognition() {
   if (!SR) return false;
@@ -67,9 +105,9 @@ function initRecognition() {
     // Android Chrome ignores `continuous` and ends after every utterance, so
     // the restart is the normal path, not the exception. Back off only on a
     // real error, otherwise restarting slowly would swallow answers.
-    if (!wantListening) return;
+    if (!wantListening || recMuted) return;
     setTimeout(() => {
-      if (wantListening && !recActive) { try { rec.start(); } catch (e) {} }
+      if (wantListening && !recMuted && !recActive) { try { rec.start(); } catch (e) {} }
     }, restartDelay);
   };
 
@@ -90,13 +128,25 @@ function initRecognition() {
     const alts = [];
     for (let i = 0; i < res.length; i++) alts.push(res[i].transcript);
 
-    if (!res.isFinal) { el('heard').textContent = alts[0] || ''; return; }
-    el('heard').textContent = alts[0] || '';
+    const shown = (alts[0] || '').slice(-80);
+    if (!res.isFinal) { el('heard').textContent = shown; return; }
+    el('heard').textContent = shown;
     restartDelay = 0;
-    if (State.speaking) return;      // don't let our own prompts feed back
+    if (State.speaking || recMuted) return;
+    if (isSelfEcho(alts)) return;    // our own prompt, arriving late
     handleUtterance(alts);
   };
   return true;
+}
+
+function muteRecognition(on) {
+  recMuted = on;
+  if (!rec) return;
+  if (on) {
+    try { rec.abort(); } catch (e) {}
+  } else if (wantListening && !recActive) {
+    try { rec.start(); } catch (e) {}
+  }
 }
 
 function startListening() {
@@ -336,6 +386,9 @@ async function speakScore() {
 }
 
 async function jumpTo(lesson) {
+  // Re-announcing the current lesson would restate its name, which is itself
+  // a jump command — the loop this app fell into. Staying put breaks it.
+  if (lesson.n === State.lesson.n) return;
   State.lesson = lesson;
   localStorage.setItem('ear.lesson', lesson.n);
   clearTimeout(silenceTimer);
