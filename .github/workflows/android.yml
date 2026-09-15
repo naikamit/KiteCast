@@ -25,7 +25,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # The action's default package list still includes the obsolete `tools`
+      # package, which Google removed from the repository — sdkmanager exits 1
+      # looking for it. Ask for exactly what the build needs instead.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       # The speech model is deliberately not in git: 40 MB of third-party
       # binary. Cached so it is fetched once rather than every run.
