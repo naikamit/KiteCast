@@ -26,7 +26,8 @@ the SDK, the platform tools and an emulator image. This is the long part.
 Get the code onto the computer:
 
     git clone https://github.com/naikamit/KiteCast.git
-    cd KiteCast
+
+This makes a `KiteCast` folder wherever you ran it.
 
 In Android Studio: **Open**, then select the `android` folder inside `KiteCast`
 — *not* the `KiteCast` folder itself. It must be the folder containing
@@ -41,11 +42,23 @@ project are deliberately conservative.
 This is the one thing that is not in the repository, because it is a 40 MB
 third-party binary.
 
+**Windows** (cmd — `tar` is built in since Windows 10; `unzip` is not):
+
+    cd KiteCast\android\app\src\main\assets
+    curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+    tar -xf vosk-model-small-en-us-0.15.zip
+    ren vosk-model-small-en-us-0.15 model-en-us
+    del vosk-model-small-en-us-0.15.zip
+    dir model-en-us
+
+**macOS / Linux**:
+
     cd KiteCast/android/app/src/main/assets
     curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
     unzip vosk-model-small-en-us-0.15.zip
     mv vosk-model-small-en-us-0.15 model-en-us
     rm vosk-model-small-en-us-0.15.zip
+    ls model-en-us
 
 You should end up with `assets/model-en-us/` containing `am`, `conf`, `graph`
 and `ivector` folders. If that path is wrong the app builds and runs but hears
@@ -133,6 +146,7 @@ point of this build.
 
 | symptom | cause |
 |---|---|
+| `'unzip' is not recognized` | Windows — use `tar -xf` instead |
 | phone never appears in Android Studio | charge-only cable, or USB mode not set to file transfer |
 | `SDK location not found` | open the `android` folder, not `KiteCast` |
 | build fails on `vosk-android` | version bump needed; send me the error |
