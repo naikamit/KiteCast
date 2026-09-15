@@ -30,10 +30,10 @@ if (typeof speechSynthesis !== 'undefined') {
   speechSynthesis.onvoiceschanged = pickVoice;
 }
 
-function say(text, rate = 1.05) {
+function say(text, rate = 1.05, tone) {
   return new Promise(resolve => {
     if (!text) return resolve();
-    setStatus(text);
+    setStatus(text, tone);
     const u = new SpeechSynthesisUtterance(text);
     if (voice) u.voice = voice;
     u.rate = rate;
@@ -261,11 +261,11 @@ async function resolveAnswer(id, timedOut) {
 
   if (correct) {
     AudioEngine.chime(true);
-    setStatus('correct');
-    await wait(750);
+    setStatus(truth.name, 'ok');
+    await wait(900);
   } else {
     AudioEngine.stopAll();
-    await say('No. ' + truth.name + '.');
+    await say('No. ' + truth.name + '.', 1.05, 'bad');
     await wait(120);
     const ms = AudioEngine.playInterval(q.voice, q.root, q.semi, State.lesson.mode, q.descending);
     await wait(ms + 200);
@@ -343,7 +343,7 @@ async function startSession() {
     el('mic').classList.add('hidden');
     showFallback();
   }
-  await say('Lesson ' + State.lesson.n + '. ' + State.lesson.title.replace(':', ',') + '. Name each interval.');
+  await say('Lesson ' + State.lesson.n + '. ' + State.lesson.title.replace(':', ',') + '. Name each interval.', 1.05);
   await wait(250);
   askQuestion();
 }
@@ -366,22 +366,30 @@ async function stopSession() {
 }
 
 /* ---------- view ------------------------------------------------------- */
-function setStatus(t) { el('status').textContent = t; }
+function setStatus(t, tone) {
+  const node = el('status');
+  node.textContent = t;
+  node.classList.toggle('ok', tone === 'ok');
+  node.classList.toggle('bad', tone === 'bad');
+}
 function setMic(on) { el('mic').classList.toggle('on', on); }
 
 function renderLesson() {
   el('lessonTitle').textContent = State.lesson.title;
   el('lessonNum').textContent = 'Lesson ' + State.lesson.n + ' of 13';
-  el('answers').textContent = State.lesson.set.map(id => INTERVALS[id].name).join(' · ');
+  el('answers').textContent = State.lesson.set.map(id => INTERVALS[id].name).join('  ·  ');
 }
 
 function renderStats() {
   const s = State.stats;
-  el('score').textContent = s.total ? `${s.correct}/${s.total}` : '–';
-  el('pct').textContent = s.total ? Math.round(100 * s.correct / s.total) + '%' : '–';
-  el('first').textContent = s.total ? Math.round(100 * s.firstListen / s.total) + '%' : '–';
+  el('tally').textContent = s.total
+    ? `${s.correct} of ${s.total}  ·  ${Math.round(100 * s.correct / s.total)}%  ·  ` +
+      `${Math.round(100 * s.firstListen / s.total)}% on first hearing`
+    : 'not started';
   el('history').innerHTML = State.history.map(h =>
-    `<li class="${h.correct ? 'ok' : 'bad'}"><span>${h.truth}</span><em>${h.given}</em></li>`
+    `<li class="${h.correct ? 'ok' : 'bad'}">` +
+    `<span class="truth">${h.truth}</span>` +
+    `<span class="given">${h.correct ? 'named it' : 'you said ' + h.given}</span></li>`
   ).join('');
 }
 

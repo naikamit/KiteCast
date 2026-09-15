@@ -52,6 +52,14 @@ accepted and discarded. Flip this if it should be scored.
 | `audio.js` | instrument synthesis, interval playback, reverb |
 | `intervals.js` | interval table, 13-lesson ladder, speech→answer matching |
 | `app.js` | session loop, recognition, scoring, view |
+| `body.html` | shared markup fragment |
+| `index.html` | deployable page (built from `body.html` + `style.css`) |
+| `artifact.html` | same page built for Claude Artifact hosting |
+
+Design is dark-first — this gets used in dim rooms and on headphones at night —
+with a full light theme rather than an inversion. The screen is an instrument
+panel: one oversized readout you can catch peripherally without actually
+looking, since not looking is the whole point.
 
 ## Voice commands
 
