@@ -288,14 +288,32 @@ def test_announcing_the_current_lesson_is_not_a_jump():
     assert "if (lesson.n === State.lesson.n) return;" in jump
 
 
-def test_a_lesson_announcement_really_does_parse_as_a_command():
-    """Why the guards above are load-bearing rather than belt-and-braces: the
-    sentence the app speaks to announce a lesson is itself a jump command."""
-    spoken = "Lesson 1. Harmonic, Seconds. Name each interval."
-    from kitecast.ear import LESSONS as _L
-    norm = spoken.lower().replace(".", " ").replace(",", " ")
-    assert "lesson 1" in norm
-    assert _L[0].title == "Harmonic: Seconds"
+def test_the_lesson_is_never_announced():
+    """It is on screen, so saying it is redundant — and that sentence is what
+    the app used to hear itself say and loop on."""
+    start = APP_JS[APP_JS.index("async function startSession()"):APP_JS.index("async function stopSession()")]
+    jump = APP_JS[APP_JS.index("async function jumpTo("):APP_JS.index("/* ---------- transport")]
+    for block, where in ((start, "startSession"), (jump, "jumpTo")):
+        assert "say('Lesson" not in block and 'say("Lesson' not in block, where
+        assert "lesson.title" not in block or "say(" not in block, where
+
+
+def test_the_voice_is_unhurried():
+    assert "const VOICE_RATE = 0.88;" in APP_JS
+    assert "function say(text, rate = VOICE_RATE, tone)" in APP_JS
+
+
+def test_the_voice_has_no_regional_accent():
+    """en-US first, so en-GB / en-AU / en-IN voices fall to the back, and the
+    utterance carries the language too in case no voice object was matched."""
+    pick = APP_JS[APP_JS.index("function pickVoice()"):APP_JS.index("if (typeof speechSynthesis")]
+    assert "^en[-_]us$" in pick
+    assert "u.lang = 'en-US'" in APP_JS
+
+
+def test_feedback_is_not_curt():
+    assert "'Not quite. '" in APP_JS
+    assert "'No. '" not in APP_JS
 
 
 # ------------------------------------------------ transport and log (tripwires)
