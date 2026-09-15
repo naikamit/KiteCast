@@ -252,3 +252,47 @@ def test_without_ear_host_the_trainer_is_only_at_the_prefix(client):
     assert client.get("/ear/").status_code == 200
     assert client.get("/").status_code == 200        # console, not the trainer
     assert "Say the Interval" not in client.get("/").text
+
+
+# --------------------------------------------- the self-echo loop (regression)
+#
+# The app's prompts name the lesson, and a lesson name is a navigation command,
+# so on a phone — where the speaker reaches the microphone — it heard itself,
+# jumped, re-announced and looped. These are tripwires on the guards that stop
+# it; `ear/selfecho.test.js` reproduces the loop properly in a browser.
+
+APP_JS = (EAR_DIR / "app.js").read_text()
+
+
+def test_speaking_shuts_the_microphone():
+    say = APP_JS[APP_JS.index("function say("):APP_JS.index("function isSelfEcho(")]
+    assert "muteRecognition(true)" in say, (
+        "say() must mute the recogniser, or the app hears its own prompts")
+
+
+def test_the_gate_outlives_the_utterance():
+    """A transcript arrives after speech ends; dropping the gate at onend is
+    what let the tail of our own sentence through."""
+    say = APP_JS[APP_JS.index("function say("):APP_JS.index("function isSelfEcho(")]
+    assert "speakGate = setTimeout(" in say
+    assert ", 700);" in say
+
+
+def test_speech_synthesis_cannot_deafen_the_app():
+    """If onend never fires the gate would stay shut for good."""
+    assert "const bail = setTimeout(done," in APP_JS
+
+
+def test_announcing_the_current_lesson_is_not_a_jump():
+    jump = APP_JS[APP_JS.index("async function jumpTo("):]
+    assert "if (lesson.n === State.lesson.n) return;" in jump
+
+
+def test_a_lesson_announcement_really_does_parse_as_a_command():
+    """Why the guards above are load-bearing rather than belt-and-braces: the
+    sentence the app speaks to announce a lesson is itself a jump command."""
+    spoken = "Lesson 1. Harmonic, Seconds. Name each interval."
+    from kitecast.ear import LESSONS as _L
+    norm = spoken.lower().replace(".", " ").replace(",", " ")
+    assert "lesson 1" in norm
+    assert _L[0].title == "Harmonic: Seconds"
