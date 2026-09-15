@@ -60,25 +60,25 @@ const latest = () => window.__recs[window.__recs.length-1];
   console.log(`questions played while paused: ${q2-q1} (want 0)`);
   if (q2 !== q1) fails.push('still drilling while paused');
 
-  // an answer while paused must be ignored, a command must not
-  const micLive = await pg.evaluate(() => { const r=latestRec(); return !!(r&&r.running); },
-    ).catch(()=>null);
-  await pg.evaluate(() => { window.latestRec = () => window.__recs[window.__recs.length-1]; });
-  const stillListening = await pg.evaluate(() => { const r=window.__recs[window.__recs.length-1]; return !!(r&&r.running); });
-  console.log('microphone still open while paused:', stillListening, '(want true)');
-  if (!stillListening) fails.push('cannot say resume: mic closed while paused');
+  // Pause means the microphone stops. Resuming is the button's job.
+  const stillListening = await pg.evaluate(() => {
+    const r = window.__recs[window.__recs.length-1]; return !!(r && r.running);
+  });
+  console.log('microphone open while paused:', stillListening, '(want false)');
+  if (stillListening) fails.push('microphone still live while paused');
 
-  await pg.evaluate(() => window.__recs[window.__recs.length-1].feed('minor second'));
-  await pg.waitForTimeout(400);
   const scored = await pg.evaluate(() => State.stats.total);
   console.log('answers scored while paused:', scored, '(want 0)');
   if (scored !== 0) fails.push('scored an answer while paused');
 
-  // resume by voice
-  await pg.evaluate(() => window.__recs[window.__recs.length-1].feed('resume'));
-  await pg.waitForTimeout(1200);
-  console.log('button after voice resume:', await label());
-  if (await label() !== 'Pause') fails.push('voice resume did not resume');
+  await pg.click('#start'); await pg.waitForTimeout(1200);
+  console.log('button after resuming:', await label());
+  if (await label() !== 'Pause') fails.push('resume did not resume');
+  const backOn = await pg.evaluate(() => {
+    const r = window.__recs[window.__recs.length-1]; return !!(r && r.running);
+  });
+  console.log('microphone reopened on resume:', backOn, '(want true)');
+  if (!backOn) fails.push('microphone did not reopen on resume');
 
   // interim results should be acted on without waiting for the final
   await pg.waitForTimeout(800);

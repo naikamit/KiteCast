@@ -134,7 +134,41 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 /* ---------- speech in -------------------------------------------------- */
 let rec = null, recActive = false, wantListening = false, restartDelay = 0, recMuted = false;
-let recOpenedAt = 0, interimLogged = false;
+let recOpenedAt = 0, interimLogged = false, onDevice = false;
+
+/* Chrome's Web Speech API is cloud-backed by default: audio goes to Google and
+   the transcript comes back, which is most of the latency in the log and the
+   reason the stream is torn down after every utterance. Recent Chrome can run
+   the same API on-device instead.
+
+   Only switched on when the browser can confirm the language pack is actually
+   present — guessing wrong would break recognition outright — and the mode is
+   logged either way, so a real device answers the question rather than a
+   feature table. */
+async function preferOnDevice() {
+  if (!SR || !('processLocally' in SR.prototype)) {
+    log('mic', 'on-device not supported here — using the cloud recogniser');
+    return false;
+  }
+  if (typeof SR.availableOnDevice !== 'function') {
+    log('mic', 'on-device support unconfirmable — using the cloud recogniser');
+    return false;
+  }
+  try {
+    let state = await SR.availableOnDevice('en-US');
+    log('mic', 'on-device availability: ' + state);
+    if (state === 'downloadable' && typeof SR.installOnDevice === 'function') {
+      log('mic', 'requesting the on-device language pack');
+      await SR.installOnDevice('en-US');
+      state = await SR.availableOnDevice('en-US');
+      log('mic', 'after install: ' + state);
+    }
+    return state === 'available';
+  } catch (e) {
+    log('warn', 'on-device check failed: ' + e.message);
+    return false;
+  }
+}
 
 function initRecognition() {
   if (!SR) return false;
@@ -143,6 +177,10 @@ function initRecognition() {
   rec.interimResults = true;
   rec.maxAlternatives = 5;
   rec.lang = 'en-US';
+  if (onDevice && 'processLocally' in rec) {
+    rec.processLocally = true;
+    log('mic', 'recognising on-device');
+  }
 
   rec.onstart = () => {
     recActive = true;
@@ -174,6 +212,13 @@ function initRecognition() {
     } else if (e.error === 'no-speech' || e.error === 'aborted') {
       restartDelay = 0;
       if (e.error !== 'aborted') log('warn', e.error);
+    } else if (onDevice && (e.error === 'language-not-supported' || e.error === 'service-not-allowed')) {
+      // The on-device model said it was there and then refused; go back to
+      // the cloud rather than leaving the app unable to hear anything.
+      onDevice = false;
+      if (rec) { try { rec.processLocally = false; } catch (err) {} }
+      log('warn', e.error + ' on-device — falling back to the cloud recogniser');
+      restartDelay = 0;
     } else {
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 400, 4000);
       log('warn', e.error + ' — backing off to ' + restartDelay + 'ms');
@@ -342,13 +387,9 @@ async function runListenMode() {
 function handleUtterance(alts) {
   if (!State.running) return;
 
-  // While paused the microphone stays open — muting it would leave no way to
-  // say "resume" in an app with nothing to tap. Only commands get through.
-  if (State.paused) {
-    const c = interpret(alts, State.lesson);
-    if (c && c.kind === 'command') runCommand(c.id);
-    return;
-  }
+  // Paused means the microphone is off, so nothing should reach here at all;
+  // a result already in flight when it stopped still might.
+  if (State.paused) return;
 
   if (State.phase === 'confirming') {
     const yn = interpretYesNo(alts);
@@ -569,9 +610,10 @@ function pauseSession() {
   clearTimeout(silenceTimer);
   AudioEngine.stopAll();
   try { speechSynthesis.cancel(); } catch (e) {}
+  stopListening();          // pause means the microphone stops too
   keepAwake(false);
   setStatus('paused');
-  log('mic', 'paused — still listening for commands');
+  log('mic', 'paused — microphone off');
   renderTransport();
 }
 
@@ -593,6 +635,7 @@ function onTransport() {
 /* ---------- session ---------------------------------------------------- */
 async function startSession() {
   AudioEngine.resume();
+  if (!rec) onDevice = await preferOnDevice();
   const haveVoice = rec || initRecognition();
   State.running = true;
   State.paused = false;

@@ -133,6 +133,24 @@ logging; the answer only appears once the question is resolved.
 `repeat` · `skip` · `score` · `listen` · `drill` · `pause` · `resume` ·
 `lesson 7` · `melodic sixths` · `stop`
 
+## Where recognition runs
+
+Chrome's Web Speech API is cloud-backed by default: audio goes to Google and
+the transcript comes back. That round trip is most of the latency in the log,
+and it is why the stream is torn down after every utterance on Android.
+
+Recent Chrome can run the same API on-device via `processLocally`. The app asks
+`SpeechRecognition.availableOnDevice('en-US')` first and only switches when the
+browser confirms the language pack is present — guessing wrong would break
+recognition outright — installing it first where `installOnDevice` exists. If
+an on-device model accepts and then refuses, it falls back to the cloud rather
+than leaving the app deaf. Either way the log says which mode is running.
+
+A native build would do better still: Android has `SpeechRecognizer` with
+on-device models, iOS has `SFSpeechRecognizer` with `requiresOnDeviceRecognition`,
+and Vosk runs offline on both with a *constrained grammar* — which for a
+twelve-word vocabulary is the real prize, not just the removed round trip.
+
 ## Known limits
 
 Web Speech sends audio to Google and needs a network connection. The Android
