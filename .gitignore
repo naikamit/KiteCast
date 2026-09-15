@@ -6,3 +6,13 @@ __pycache__/
 *.db-shm
 .venv/
 .pytest_cache/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/app/src/main/assets/model-en-us/
+*.apk
+*.keystore

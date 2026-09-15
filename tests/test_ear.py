@@ -396,3 +396,64 @@ def test_the_lock_screen_gets_controls():
     assert "mediaSession" in APP_JS
     for action in ("'play'", "'pause'", "'nexttrack'", "'previoustrack'"):
         assert f"setActionHandler({action}" in APP_JS
+
+
+# --------------------------------------------- the Android port (third copy)
+#
+# The interval table now exists in three places: Python (canonical), JavaScript
+# (so the web drill runs offline) and Kotlin (so the phone does). No compiler
+# is involved in these tests — they parse the Kotlin as text, which is exactly
+# what catches a transcription slip.
+
+ANDROID_SRC = (Path(__file__).resolve().parent.parent
+               / "android/app/src/main/java/com/millsandgoon/ear")
+
+
+def _kotlin_intervals():
+    src = (ANDROID_SRC / "Intervals.kt").read_text()
+    block = src[src.index("val INTERVALS"):src.index("val ALL")]
+    return {m.group(1): (int(m.group(2)), m.group(3)) for m in
+            re.finditer(r'"(\w+)" to Interval\((\d+), "([^"]+)"', block)}
+
+
+def _kotlin_lessons():
+    src = (ANDROID_SRC / "Intervals.kt").read_text()
+    block = src[src.index("val LESSONS"):src.index("fun lessonOf")]
+    out = []
+    for m in re.finditer(
+            r'Lesson\((\d+), "([^"]+)", Mode\.(\w+), (ALL|listOf\([^)]*\))\)', block):
+        raw = m.group(4)
+        names = list(_kotlin_intervals()) if raw == "ALL" else re.findall(r'"(\w+)"', raw)
+        out.append((int(m.group(1)), m.group(2), m.group(3).lower(), names))
+    return out
+
+
+def test_the_kotlin_interval_table_matches():
+    assert _kotlin_intervals() == {i: (s, n) for i, (s, n) in INTERVALS.items()}
+
+
+def test_the_kotlin_ladder_matches():
+    assert _kotlin_lessons() == [(l.n, l.title, l.mode, list(l.set)) for l in LESSONS]
+
+
+def test_the_kotlin_synth_carries_the_measured_constants():
+    """These numbers were measured, not chosen — a slip in transcription would
+    quietly detune the app."""
+    synth = (ANDROID_SRC / "Synth.kt").read_text()
+    for constant in ("0.00015", "-1.25", "0.82", "2.4 /", "6.9078",
+                     "0.34, 1.9, 0.11", "0.56, 3.1, 0.40", "0.55f"):
+        assert constant in synth, constant
+
+
+def test_the_phone_holds_the_microphone_with_the_screen_off():
+    """The entire reason for the native build."""
+    manifest = (ANDROID_SRC.parent.parent.parent.parent / "AndroidManifest.xml").read_text()
+    assert "FOREGROUND_SERVICE_MICROPHONE" in manifest
+    assert 'android:foregroundServiceType="microphone|mediaPlayback"' in manifest
+
+
+def test_recognition_is_grammar_constrained_and_ignores_humming():
+    src = (ANDROID_SRC / "Intervals.kt").read_text()
+    assert "fun voskGrammar()" in src
+    assert '"[unk]"' in src
+    assert "[unk]" in (ANDROID_SRC / "Listener.kt").read_text()

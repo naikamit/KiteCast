@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- two notes a measured distance apart, as on the web app -->
+    <path android:fillColor="#8A6A32" android:pathData="M52.5,40 h3 v28 h-3 z" />
+    <path android:fillColor="#C9973F" android:pathData="M38,36 h22 a4,4 0 0 1 0,8 h-22 a4,4 0 0 1 0,-8 z" />
+    <path android:fillColor="#C9973F" android:pathData="M48,64 h22 a4,4 0 0 1 0,8 h-22 a4,4 0 0 1 0,-8 z" />
+</vector>
