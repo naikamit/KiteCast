@@ -1,0 +1,12 @@
+<resources>
+    <!-- the same palette as the web app: inside a piano case -->
+    <color name="ground">#14100E</color>
+    <color name="raise">#1E1815</color>
+    <color name="line">#2E2521</color>
+    <color name="ink">#F0E6D8</color>
+    <color name="ink_dim">#A1948A</color>
+    <color name="ink_faint">#6B6058</color>
+    <color name="brass">#C9973F</color>
+    <color name="patina">#7FA882</color>
+    <color name="felt">#C4635D</color>
+</resources>

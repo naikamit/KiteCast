@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Ear" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/ground</item>
+        <item name="android:navigationBarColor">@color/ground</item>
+    </style>
+</resources>
