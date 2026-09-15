@@ -324,12 +324,22 @@ def test_feedback_is_not_curt():
 STYLE_CSS = (EAR_DIR / "style.css").read_text()
 
 
-def test_pause_keeps_the_microphone_open():
-    """Muting while paused would leave no way to say "resume" in an app with
-    nothing to tap."""
-    assert "if (State.paused) {" in APP_JS
+def test_pause_stops_the_microphone():
+    """Pause means stop listening — the transport button is how you come back."""
     pause = APP_JS[APP_JS.index("function pauseSession("):APP_JS.index("function resumeSession(")]
-    assert "stopListening()" not in pause
+    assert "stopListening()" in pause
+    resume = APP_JS[APP_JS.index("function resumeSession("):APP_JS.index("function onTransport(")]
+    assert "startListening()" in resume
+
+
+def test_on_device_recognition_is_only_used_when_confirmed():
+    """Web Speech is cloud-backed by default. Guessing that an on-device model
+    is present when it is not would break recognition outright."""
+    block = APP_JS[APP_JS.index("async function preferOnDevice()"):APP_JS.index("function initRecognition()")]
+    assert "availableOnDevice" in block
+    assert "return state === 'available';" in block
+    # and a model that claims to be there, then refuses, must not strand us
+    assert "onDevice = false;" in APP_JS
 
 
 def test_pause_stops_the_drill():
