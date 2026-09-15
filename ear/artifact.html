@@ -207,6 +207,15 @@ button:hover{filter:brightness(1.1)}
   #startWrap{margin-top:14px}
 }
 
+/* lifetime mastery, kept server-side — quieter than the session tally */
+.lifetime{
+  margin:-14px 0 0;text-align:center;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;color:var(--ink-faint);letter-spacing:.03em;
+  font-variant-numeric:tabular-nums
+}
+.lifetime:empty{display:none}
+
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -235,6 +244,7 @@ button:hover{filter:brightness(1.1)}
   </main>
 
   <p class="tally" id="tally">not started</p>
+  <p class="lifetime" id="lifetime"></p>
 
   <section class="vocab">
     <h2>What you'll be naming</h2>

@@ -68,18 +68,36 @@ accepted and discarded. Flip this if it should be scored.
 
 | file | contents |
 |---|---|
+| `../kitecast/ear.py` | canonical interval table, lesson ladder, mastery store |
 | `audio.js` | instrument synthesis, interval playback, reverb |
-| `intervals.js` | interval table, 13-lesson ladder, speech→answer matching |
+| `intervals.js` | the client's copy of the table, and speech→answer matching |
 | `app.js` | session loop, recognition, scoring, view |
 | `body.html` | shared markup fragment |
 | `index.html` | deployable page (built from `body.html` + `style.css`) |
 | `artifact.html` | same page built for Claude Artifact hosting |
 | `manifest.webmanifest`, `sw.js`, `icons/` | PWA install and offline shell |
 
-Design is dark-first — this gets used in dim rooms and on headphones at night —
-with a full light theme rather than an inversion. The screen is an instrument
-panel: one oversized readout you can catch peripherally without actually
-looking, since not looking is the whole point.
+## What the server does
+
+Very little, deliberately. The drill is entirely client-side — synthesis,
+recognition, scoring — so it keeps working with no network. The server owns
+mastery: how many times each interval has been heard, named correctly, and
+named on first hearing, stored per learner under an opaque cookie id. No
+accounts, and the stored row holds nothing but those counts.
+
+That is what makes the adaptive weighting worth anything. Within one session
+there is too little data to know what you are weak at; across every session
+there is plenty, so the drill spends your time on the intervals you actually
+miss rather than redealing the ones you have already got.
+
+    GET  api/progress   counts, accuracy, first-hearing rate, weakest intervals
+    POST api/answer     {interval, correct, first_listen}
+    POST api/reset      forget this learner
+    GET  api/lessons    the canonical ladder
+
+The interval table exists in both `kitecast/ear.py` and `intervals.js` — Python
+so the server can validate and report, JavaScript so the drill runs offline.
+`tests/test_ear.py` parses the JS and fails if the two ever disagree.
 
 ## Voice commands
 

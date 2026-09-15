@@ -204,3 +204,12 @@ button:hover{filter:brightness(1.1)}
   .mic{margin-top:12px}
   #startWrap{margin-top:14px}
 }
+
+/* lifetime mastery, kept server-side — quieter than the session tally */
+.lifetime{
+  margin:-14px 0 0;text-align:center;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;color:var(--ink-faint);letter-spacing:.03em;
+  font-variant-numeric:tabular-nums
+}
+.lifetime:empty{display:none}

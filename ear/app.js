@@ -12,6 +12,7 @@ const State = {
   lastRoot: null,
   speaking: false,
   stats: { correct: 0, total: 0, firstListen: 0, byInterval: {} },
+  mastery: {},              // lifetime counts from the server, by interval
   history: []
 };
 
@@ -110,11 +111,16 @@ function stopListening() {
 /* ---------- question generation --------------------------------------- */
 function pickInterval() {
   const set = State.lesson.set;
-  // Weight toward intervals this session has been getting wrong.
+  // Weight toward the intervals you actually miss, counting every session
+  // ever drilled rather than just this one — which is the point of the
+  // server keeping mastery at all.
   const weights = set.map(id => {
-    const s = State.stats.byInterval[id];
-    if (!s || s.total < 2) return 1.2;
-    return 1 + 2.2 * (1 - s.correct / s.total);
+    const life = State.mastery[id] || { seen: 0, correct: 0 };
+    const now = State.stats.byInterval[id] || { total: 0, correct: 0 };
+    const seen = life.seen + now.total;
+    const ok = life.correct + now.correct;
+    if (seen < 3) return 1.3;
+    return 1 + 2.2 * (1 - ok / seen);
   });
   const sum = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * sum;
@@ -267,6 +273,7 @@ async function resolveAnswer(id, timedOut) {
     correct
   });
   State.history = State.history.slice(0, 8);
+  reportAnswer(q.id, correct, correct && q.replays === 0);
   renderStats();
 
   if (correct) {
@@ -336,6 +343,42 @@ async function jumpTo(lesson) {
   renderLesson();
   await say('Lesson ' + lesson.n + '. ' + lesson.title.replace(':', ','));
   if (State.mode === 'listen') runListenMode(); else askQuestion();
+}
+
+/* ---------- mastery, kept server-side ---------------------------------- */
+
+/* Counts live on the server so they outlast a session, a cleared cache or a
+   different device. Both calls fail quietly: the drill is playable offline,
+   and losing a tally is not worth interrupting it for. */
+async function loadMastery() {
+  try {
+    const r = await fetch('./api/progress', { credentials: 'same-origin' });
+    if (!r.ok) return;
+    const d = await r.json();
+    State.mastery = d.intervals || {};
+    renderLifetime(d);
+  } catch (e) { /* offline, or served as plain files */ }
+}
+
+function reportAnswer(interval, correct, firstListen) {
+  fetch('./api/answer', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ interval, correct, first_listen: firstListen })
+  }).then(r => r.ok ? r.json() : null)
+    .then(row => { if (row) State.mastery[interval] = row; })
+    .catch(() => {});
+}
+
+function renderLifetime(d) {
+  const node = el('lifetime');
+  if (!node) return;
+  if (!d || !d.seen) { node.textContent = ''; return; }
+  const pct = Math.round(100 * d.accuracy);
+  const weak = (d.weakest || []).map(i => INTERVALS[i].name);
+  node.textContent = `all time  ·  ${d.seen} answers  ·  ${pct}%` +
+    (weak.length ? `  ·  weakest ${weak.join(', ')}` : '');
 }
 
 /* ---------- screen wake lock ------------------------------------------- */
@@ -431,6 +474,7 @@ function boot() {
   renderLesson();
   renderStats();
   el('start').addEventListener('click', startSession);
+  loadMastery();
   el('lessonPicker').innerHTML = LESSONS.map(l =>
     `<option value="${l.n}">${l.n}. ${l.title}</option>`).join('');
   el('lessonPicker').value = State.lesson.n;

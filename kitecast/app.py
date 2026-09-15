@@ -5,6 +5,7 @@ unauthenticated — keep the URL private."""
 
 import logging
 import mimetypes
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -19,6 +20,9 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
+from .ear import INTERVALS as EAR_INTERVALS
+from .ear import LESSONS as EAR_LESSONS
+from .ear import Progress, safe_learner
 from .ebook import (Library, blocks_to_text, cover_src, image_count, media_type, parse_text_with_images,
                     parse_upload, prepare, split_free, word_count)
 from .instruments import InstrumentStore, days_to_expiry, moneyness
@@ -31,20 +35,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-# ---- the books-only public domain (BOOKS_HOST) ----
+# ---- single-app public domains (BOOKS_HOST, EAR_HOST) ----
 #
-# One app, two faces. On the books domain the library lives at the root and
-# its admin at /admin, and every trading route is simply not there. On any
-# other hostname (the .onrender.com one) nothing changes: the console is at
-# / and the library keeps its long /millsandgoons paths.
+# One deployment, three apps, and a hostname decides which one you get. On the
+# books domain the library is at the root and its admin at /admin; on the ear
+# domain the trainer is at the root. Everything belonging to another app is
+# simply not there. On the app's own hostname (the .onrender.com one) nothing
+# is hidden: the console is at /, the library keeps its long /millsandgoons
+# paths, and the trainer sits at /ear.
 
 _BOOKS_PASSTHROUGH = ("/favicon.ico", "/apple-touch-icon.png", "/healthz")
 
+EAR_PREFIX = "/ear"
 
-def books_hosts() -> set[str]:
-    """Hostnames that serve books only — each configured host plus its www."""
+
+def _hosts(configured: str) -> set[str]:
+    """Each configured hostname plus its www. form."""
     hosts: set[str] = set()
-    for raw in (settings.books_host or "").split(","):
+    for raw in (configured or "").split(","):
         host = raw.strip().lower().lstrip("*.")
         if not host:
             continue
@@ -52,6 +60,27 @@ def books_hosts() -> set[str]:
         if not host.startswith("www."):
             hosts.add("www." + host)
     return hosts
+
+
+def books_hosts() -> set[str]:
+    return _hosts(settings.books_host)
+
+
+def ear_hosts() -> set[str]:
+    return _hosts(settings.ear_host)
+
+
+def ear_path(path: str) -> str:
+    """Map a path on the ear domain onto the trainer's routes.
+
+    Everything folds under /ear, so the trainer's relative asset paths resolve
+    from the root and every other app's routes land on a URL that does not
+    exist — no separate blocklist to keep in step."""
+    if path in _BOOKS_PASSTHROUGH:
+        return path
+    if path == EAR_PREFIX or path.startswith(EAR_PREFIX + "/"):
+        return path
+    return EAR_PREFIX + path
 
 
 def books_path(path: str) -> str | None:
@@ -108,11 +137,17 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         host = (request.headers.get("host") or "").split(":")[0].lower()
         path = request.url.path
         on_books = host in books_hosts()
+        on_ear = host in ear_hosts() and not on_books
         request.state.on_books = on_books
+        request.state.on_ear = on_ear
         if on_books:
             mapped = books_path(path)
             if mapped is None:          # the trading side doesn't exist here
                 return PlainTextResponse("Not found", status_code=404)
+            request.scope["path"] = mapped
+            request.scope["raw_path"] = mapped.encode()
+        elif on_ear:
+            mapped = ear_path(path)
             request.scope["path"] = mapped
             request.scope["raw_path"] = mapped.encode()
         elif path in ("/admin", "/b") or path.startswith(("/admin/", "/b/")):
@@ -534,13 +569,72 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             return FileResponse(icon_png, media_type="image/png")
         return FileResponse(static_dir / "favicon.svg", media_type="image/svg+xml")
 
-    # ---- ear trainer: a static PWA at /ear, served on both hostnames ----
+    # ---- ear trainer: voice-only interval practice ----
     #
-    # Its own self-contained directory at the repo root — no templates, no
-    # database, nothing shared with the trading side. html=True serves
-    # index.html for /ear/ and redirects /ear to it.
+    # The drill runs in the browser — the audio is synthesised there and the
+    # answers are spoken — so the server keeps only the part a browser cannot:
+    # mastery per interval, which outlives a session and survives clearing
+    # site data. Storage sits beside the ebook library and shares nothing
+    # with it or with the trading tables.
 
+    ear_root = None
+    if settings.db_path and settings.db_path != ":memory:":
+        ear_root = str(Path(settings.db_path).resolve().with_name("ear_progress"))
+    ear_progress = Progress(ear_root)
     ear_dir = Path(__file__).resolve().parent.parent / "ear"
+
+    def learner_of(request: Request) -> str:
+        token = request.cookies.get("ear_learner", "")
+        return token if safe_learner(token) else ""
+
+    @app.get("/ear/", include_in_schema=False)
+    def ear_index(request: Request):
+        """The app, plus the cookie that gives this browser a learner id.
+
+        No accounts: the id is opaque, set here, and names nothing but a row
+        of interval counts."""
+        resp = FileResponse(ear_dir / "index.html", media_type="text/html")
+        if not learner_of(request):
+            resp.set_cookie("ear_learner", secrets.token_urlsafe(12),
+                            max_age=60 * 60 * 24 * 365 * 5,
+                            httponly=True, samesite="lax")
+        return resp
+
+    @app.get("/ear/api/progress")
+    def ear_get_progress(request: Request):
+        token = learner_of(request)
+        return ear_progress.summary(token) if token else ear_progress.summary("unknown")
+
+    @app.post("/ear/api/answer")
+    async def ear_record_answer(request: Request):
+        token = learner_of(request)
+        if not token:
+            raise HTTPException(status_code=400, detail="no learner")
+        body = await request.json()
+        interval = body.get("interval")
+        if interval not in EAR_INTERVALS:
+            raise HTTPException(status_code=400, detail="unknown interval")
+        return ear_progress.record(token, interval,
+                                   correct=bool(body.get("correct")),
+                                   first_listen=bool(body.get("first_listen")))
+
+    @app.post("/ear/api/reset")
+    def ear_reset(request: Request):
+        token = learner_of(request)
+        if token:
+            ear_progress.reset(token)
+        return {"ok": True}
+
+    @app.get("/ear/api/lessons")
+    def ear_lessons():
+        """The canonical ladder. The client carries its own copy so it works
+        offline; `tests/test_ear.py` fails if the two drift apart."""
+        return {"lessons": [{"n": l.n, "title": l.title, "mode": l.mode,
+                             "set": list(l.set)} for l in EAR_LESSONS],
+                "intervals": {i: {"semitones": s, "name": nm}
+                              for i, (s, nm) in EAR_INTERVALS.items()}}
+
+    # Mounted last so the routes above win; html=True redirects /ear to /ear/.
     if ear_dir.is_dir():
         # Starlette guesses from the extension, and without this Chrome gets
         # the manifest as octet-stream and refuses to offer installation.
