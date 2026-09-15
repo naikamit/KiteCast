@@ -11,12 +11,41 @@ const State = {
   pending: null,            // {size, options} while awaiting a yes/no
   lastRoot: null,
   speaking: false,
+  listenSince: 0,
+  paused: false,
   stats: { correct: 0, total: 0, firstListen: 0, byInterval: {} },
   mastery: {},              // lifetime counts from the server, by interval
   history: []
 };
 
 const el = (id) => document.getElementById(id);
+
+/* ---------- log --------------------------------------------------------
+   Timings, not prose: "sometimes it lags" is only diagnosable with numbers
+   against each step. Deliberately never prints the interval being asked —
+   that would spoil the drill you are logging. */
+const T0 = performance.now();
+const LOG_MAX = 140;
+const logLines = [];
+
+const stamp = () => ((performance.now() - T0) / 1000).toFixed(1).padStart(6) + 's';
+const esc = (t) => String(t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function log(kind, text) {
+  const line = `${stamp()} ${kind.padEnd(5)} ${text}`;
+  logLines.push(line);
+  if (logLines.length > LOG_MAX) logLines.shift();
+  const node = el('log');
+  if (!node) return;
+  const li = document.createElement('li');
+  li.className = 'k-' + kind;   // namespaced: a bare .mic collides with the indicator
+  li.innerHTML = `<span class="t">${stamp()}</span> <span class="k">${kind}</span> ${esc(text)}`;
+  node.appendChild(li);
+  while (node.children.length > LOG_MAX) node.removeChild(node.firstChild);
+  node.scrollTop = node.scrollHeight;
+}
+
+const since = (t) => t ? '+' + Math.round(performance.now() - t) + 'ms' : '';
 
 /* ---------- speech out ------------------------------------------------ */
 let voice = null;
@@ -44,6 +73,7 @@ function say(text, rate = 1.05, tone) {
     lastSpoken = normalise(text);
     State.speaking = true;
     clearTimeout(speakGate);
+    log('say', '"' + text + '"');
     muteRecognition(true);
 
     const u = new SpeechSynthesisUtterance(text);
@@ -61,6 +91,7 @@ function say(text, rate = 1.05, tone) {
       speakGate = setTimeout(() => {
         State.speaking = false;
         muteRecognition(false);
+        log('mic', 'gate open (700ms after speech)');
       }, 700);
       resolve();
     };
@@ -88,6 +119,7 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 /* ---------- speech in -------------------------------------------------- */
 let rec = null, recActive = false, wantListening = false, restartDelay = 0, recMuted = false;
+let recOpenedAt = 0, interimLogged = false;
 
 function initRecognition() {
   if (!SR) return false;
@@ -97,7 +129,11 @@ function initRecognition() {
   rec.maxAlternatives = 5;
   rec.lang = 'en-US';
 
-  rec.onstart = () => { recActive = true; setMic(true); };
+  rec.onstart = () => {
+    recActive = true;
+    setMic(true);
+    log('mic', 'open' + (recOpenedAt ? ' (gap ' + Math.round(performance.now() - recOpenedAt) + 'ms)' : ''));
+  };
 
   rec.onend = () => {
     recActive = false;
@@ -105,7 +141,11 @@ function initRecognition() {
     // Android Chrome ignores `continuous` and ends after every utterance, so
     // the restart is the normal path, not the exception. Back off only on a
     // real error, otherwise restarting slowly would swallow answers.
-    if (!wantListening || recMuted) return;
+    recOpenedAt = performance.now();
+    if (!wantListening || recMuted) { log('mic', 'closed'); return; }
+    // Android ends the stream after every utterance, so this gap is the main
+    // suspect whenever an answer seems to have been swallowed.
+    log('mic', 'closed, reopening in ' + restartDelay + 'ms');
     setTimeout(() => {
       if (wantListening && !recMuted && !recActive) { try { rec.start(); } catch (e) {} }
     }, restartDelay);
@@ -118,8 +158,10 @@ function initRecognition() {
       showFallback();
     } else if (e.error === 'no-speech' || e.error === 'aborted') {
       restartDelay = 0;
+      if (e.error !== 'aborted') log('warn', e.error);
     } else {
       restartDelay = Math.min(restartDelay ? restartDelay * 2 : 400, 4000);
+      log('warn', e.error + ' — backing off to ' + restartDelay + 'ms');
     }
   };
 
@@ -129,11 +171,31 @@ function initRecognition() {
     for (let i = 0; i < res.length; i++) alts.push(res[i].transcript);
 
     const shown = (alts[0] || '').slice(-80);
-    if (!res.isFinal) { el('heard').textContent = shown; return; }
     el('heard').textContent = shown;
-    restartDelay = 0;
+
     if (State.speaking || recMuted) return;
-    if (isSelfEcho(alts)) return;    // our own prompt, arriving late
+    if (isSelfEcho(alts)) { if (res.isFinal) log('hear', 'ignored our own prompt'); return; }
+
+    if (!res.isFinal) {
+      if (!interimLogged && shown.trim()) {
+        interimLogged = true;
+        log('hear', 'interim ' + since(State.listenSince) + ' "' + shown + '"');
+      }
+      // Acting on a confident interim is what removes most of the wait: the
+      // final transcript often lands a second later saying the same thing.
+      if (State.phase === 'listening') {
+        const early = interpret(alts, State.lesson);
+        if (early && early.kind === 'answer') {
+          log('hear', 'took interim answer ' + since(State.listenSince));
+          handleUtterance(alts);
+        }
+      }
+      return;
+    }
+
+    restartDelay = 0;
+    log('hear', 'final ' + since(State.listenSince) + ' "' + shown + '"');
+    interimLogged = false;
     handleUtterance(alts);
   };
   return true;
@@ -209,6 +271,10 @@ function playCurrent() {
   const q = State.current;
   State.phase = 'playing';
   setStatus('…');
+  // Never logs which interval — that would spoil the drill being logged.
+  log('play', AudioEngine.VOICES[q.voice].label + ' · ' + State.lesson.mode +
+      (State.lesson.mode === 'melodic' ? (q.descending ? ' down' : ' up') : '') +
+      (q.replays ? ' · replay ' + q.replays : ''));
   el('voice').textContent = AudioEngine.VOICES[q.voice].label +
     (State.lesson.mode === 'melodic' ? (q.descending ? ' · descending' : ' · ascending') : '');
   return AudioEngine.playInterval(q.voice, q.root, q.semi, State.lesson.mode, q.descending);
@@ -221,7 +287,7 @@ function armSilence() {
   clearTimeout(silenceTimer);
   nudged = false;
   silenceTimer = setTimeout(async () => {
-    if (State.phase !== 'listening') return;
+    if (State.phase !== 'listening' || State.paused) return;
     nudged = true;
     State.current.replays++;
     playCurrent();
@@ -233,19 +299,22 @@ function armSilence() {
 }
 
 async function askQuestion() {
-  if (!State.running) return;
+  if (!State.running || State.paused) return;
   State.current = newQuestion();
   State.pending = null;
   const ms = playCurrent();
   await wait(Math.min(ms, 900));       // barge-in: listening opens early
   if (!State.running) return;
   State.phase = 'listening';
+  State.listenSince = performance.now();
+  interimLogged = false;
   setStatus('listening');
+  log('mic', 'awaiting answer' + (recActive ? '' : ' (recogniser not open yet)'));
   armSilence();
 }
 
 async function runListenMode() {
-  if (!State.running) return;
+  if (!State.running || State.paused) return;
   State.current = newQuestion();
   const ms = playCurrent();
   await wait(ms + 150);
@@ -257,6 +326,14 @@ async function runListenMode() {
 
 function handleUtterance(alts) {
   if (!State.running) return;
+
+  // While paused the microphone stays open — muting it would leave no way to
+  // say "resume" in an app with nothing to tap. Only commands get through.
+  if (State.paused) {
+    const c = interpret(alts, State.lesson);
+    if (c && c.kind === 'command') runCommand(c.id);
+    return;
+  }
 
   if (State.phase === 'confirming') {
     const yn = interpretYesNo(alts);
@@ -323,6 +400,10 @@ async function resolveAnswer(id, timedOut) {
     correct
   });
   State.history = State.history.slice(0, 8);
+  log(correct ? 'ok' : 'bad',
+      truth.name + (id && !correct ? ' — you said ' + INTERVALS[id].name : '') +
+      (timedOut ? ' — timed out' : (!id && !timedOut ? ' — passed' : '')) +
+      '  ' + since(State.listenSince));
   reportAnswer(q.id, correct, correct && q.replays === 0);
   renderStats();
 
@@ -356,10 +437,14 @@ async function runCommand(id) {
       return;
     case 'score':
       return speakScore();
+    case 'pause':
+      return pauseSession();
+    case 'resume':
+      return resumeSession();
     case 'stop':
       return stopSession();
     case 'help':
-      return say('Say the interval. Or say repeat, skip, score, or lesson three.');
+      return say('Say the interval. Or say repeat, skip, score, pause, or lesson three.');
     case 'listen':
       if (State.mode === 'listen') return;
       State.mode = 'listen';
@@ -454,14 +539,52 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && State.running) keepAwake(true);
 });
 
+/* ---------- transport --------------------------------------------------- */
+function renderTransport() {
+  const b = el('start');
+  b.textContent = !State.running ? (State.stats.total ? 'Resume' : 'Start')
+                : State.paused ? 'Resume' : 'Pause';
+  el('pausedNote').hidden = !(State.running && State.paused);
+}
+
+function pauseSession() {
+  if (!State.running || State.paused) return;
+  State.paused = true;
+  State.phase = 'idle';
+  clearTimeout(silenceTimer);
+  AudioEngine.stopAll();
+  try { speechSynthesis.cancel(); } catch (e) {}
+  keepAwake(false);
+  setStatus('paused');
+  log('mic', 'paused — still listening for commands');
+  renderTransport();
+}
+
+function resumeSession() {
+  if (!State.running || !State.paused) return;
+  State.paused = false;
+  keepAwake(true);
+  startListening();
+  log('mic', 'resumed');
+  renderTransport();
+  if (State.mode === 'listen') runListenMode(); else askQuestion();
+}
+
+function onTransport() {
+  if (!State.running) return startSession();
+  return State.paused ? resumeSession() : pauseSession();
+}
+
 /* ---------- session ---------------------------------------------------- */
 async function startSession() {
   AudioEngine.resume();
   const haveVoice = rec || initRecognition();
   State.running = true;
+  State.paused = false;
   State.phase = 'idle';
   keepAwake(true);
-  el('startWrap').classList.add('hidden');
+  renderTransport();
+  log('mic', 'session started');
   if (haveVoice) {
     startListening();
   } else {
@@ -481,6 +604,9 @@ async function stopSession() {
   AudioEngine.stopAll();
   stopListening();
   keepAwake(false);
+  State.paused = false;
+  renderTransport();
+  log('mic', 'session stopped');
   const s = State.stats;
   if (s.total) {
     const pct = Math.round(100 * s.correct / s.total);
@@ -488,9 +614,8 @@ async function stopSession() {
   } else {
     await say('Stopped.');
   }
-  el('startWrap').classList.remove('hidden');
-  el('start').textContent = 'Resume';
   setStatus('stopped');
+  renderTransport();
 }
 
 /* ---------- view ------------------------------------------------------- */
@@ -526,7 +651,29 @@ function boot() {
   State.lesson = LESSONS.find(l => l.n === saved) || LESSONS[0];
   renderLesson();
   renderStats();
-  el('start').addEventListener('click', startSession);
+  el('start').addEventListener('click', onTransport);
+  renderTransport();
+  el('logclear').addEventListener('click', () => {
+    logLines.length = 0;
+    el('log').innerHTML = '';
+  });
+  el('logcopy').addEventListener('click', async (e) => {
+    const text = logLines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      e.target.textContent = 'Copied';
+    } catch (err) {
+      // Clipboard access is refused in some embeddings; select it instead so
+      // a long-press copy still works.
+      const r = document.createRange();
+      r.selectNodeContents(el('log'));
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      e.target.textContent = 'Selected';
+    }
+    setTimeout(() => { e.target.textContent = 'Copy'; }, 1600);
+  });
   loadMastery();
   el('lessonPicker').innerHTML = LESSONS.map(l =>
     `<option value="${l.n}">${l.n}. ${l.title}</option>`).join('');

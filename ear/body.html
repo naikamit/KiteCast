@@ -18,6 +18,7 @@
     <p class="heard" id="heard"></p>
     <p class="source" id="voice"></p>
     <div id="startWrap"><button id="start">Start</button></div>
+    <p class="paused" id="pausedNote" hidden>paused — say <code>resume</code> or press the button</p>
     <p class="mic" id="mic"><span class="dot"></span>microphone</p>
     <div class="fallback hidden" id="fallback">
       <input id="typed" placeholder="Type the interval, then Enter" autocomplete="off" spellcheck="false">
@@ -34,12 +35,21 @@
 
   <ol class="ledger" id="history"></ol>
 
+  <section class="logwrap">
+    <div class="loghead">
+      <h2>Log</h2>
+      <button type="button" class="ghost" id="logcopy">Copy</button>
+      <button type="button" class="ghost" id="logclear">Clear</button>
+    </div>
+    <ol class="log" id="log"></ol>
+  </section>
+
   <footer class="hint">
     <strong>Answer out loud.</strong> Humming to find the note is ignored, so sing
     all you like — only a real interval name counts. If the recogniser can't
     separate major from minor, it asks you a yes-or-no question instead of guessing.<br>
     Say <code>repeat</code>, <code>skip</code>, <code>score</code>, <code>listen</code>,
-    <code>drill</code>, <code>lesson 7</code>, <code>melodic sixths</code> or <code>stop</code>.
+    <code>drill</code>, <code>pause</code>, <code>resume</code>, <code>lesson 7</code>, <code>melodic sixths</code> or <code>stop</code>.
   </footer>
 
 </div>
