@@ -59,11 +59,17 @@ class IntervalsTest {
         assertEquals("the table is out of order", steps.sorted(), steps)
     }
 
-    @Test fun `chords are ascending offsets above a root`() {
+    /** The root is implied, never stored — `offsetsOf` returns the notes above
+     *  it, and the synth is handed the root separately. A stored 0 would sound
+     *  the root twice. */
+    @Test fun `chords are ascending offsets above an implied root`() {
         for ((id, chord) in CHORDS) {
-            assertEquals("$id does not start at the root", 0, chord.offsets.first())
+            assertTrue("$id stores the root", chord.offsets.all { it > 0 })
             assertEquals("$id is out of order", chord.offsets.sorted(), chord.offsets)
             assertEquals("$id repeats a note", chord.offsets.size, chord.offsets.toSet().size)
+        }
+        for (id in INTERVALS.keys + CHORDS.keys) {
+            assertTrue("$id sounds the root twice", offsetsOf(id).none { it == 0 })
         }
     }
 
