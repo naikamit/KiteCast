@@ -13,6 +13,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // Vosk ships libvosk.so for four architectures and a phone uses one.
+        // The other three were 26.6 MB of an 82 MB APK. Every Android device
+        // since roughly 2017 is arm64; add "armeabi-v7a" back here if an
+        // older 32-bit device ever needs to run this.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -30,16 +36,13 @@ android {
 
     buildFeatures { viewBinding = true }
 
-    // The speech model is already compressed; letting aapt squeeze it again
-    // only makes unpacking slower.
-    androidResources { noCompress += listOf("model") }
-
     packaging { resources.excludes += "META-INF/*" }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.drawerlayout:drawerlayout:1.2.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.media:media:1.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
