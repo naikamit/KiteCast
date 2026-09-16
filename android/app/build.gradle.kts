@@ -51,4 +51,8 @@ dependencies {
     // this app exists rather than the web one.
     implementation("com.alphacephei:vosk-android:0.3.47")
     implementation("net.java.dev.jna:jna:5.13.0@aar")
+
+    // The lesson ladder and the page's decisions, checked on the JVM — no
+    // device, no emulator, so CI runs them on every push.
+    testImplementation("junit:junit:4.13.2")
 }
