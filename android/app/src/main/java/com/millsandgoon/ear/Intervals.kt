@@ -50,7 +50,7 @@ val ALL_CHORDS: List<String> = CHORDS.keys.toList()
 enum class Mode { HARMONIC, MELODIC }
 
 /** The top level of the menu: what kind of thing you are naming. */
-enum class Group(val label: String) { HARMONIC("Harmonic"), MELODIC("Melodic"), CHORDS("Chords") }
+enum class Group(val label: String) { MELODIC("Melodic"), HARMONIC("Harmonic"), CHORDS("Chords") }
 
 enum class Kind { INTERVAL, CHORD }
 

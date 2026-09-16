@@ -85,7 +85,7 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
         ui.log.setOnLongClickListener {
             val cb = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cb.setPrimaryClip(android.content.ClipData.newPlainText("ear log", service?.logText().orEmpty()))
-            ui.heard.text = "log copied"
+            android.widget.Toast.makeText(this, "Log copied", android.widget.Toast.LENGTH_SHORT).show()
             true
         }
 
@@ -213,7 +213,6 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
         }))
     }
 
-    override fun onHeard(text: String) = runOnUiThread { ui.heard.text = text }
     override fun onTally(text: String) = runOnUiThread { ui.tally.text = text }
     override fun onTransport(label: String) = runOnUiThread { ui.transport.text = label }
     override fun onScores() = runOnUiThread { menu.notifyDataSetChanged() }

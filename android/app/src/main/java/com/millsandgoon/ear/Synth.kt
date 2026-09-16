@@ -28,7 +28,7 @@ object Synth {
     const val SAMPLE_RATE_RECOGNITION = 16000.0f
 
     enum class Voice(val label: String) {
-        PIANO("piano"), NYLON("classical guitar"), STEEL("acoustic guitar"), SAX("alto sax")
+        PIANO("piano"), NYLON("classical guitar"), STEEL("acoustic guitar")
     }
 
     fun midiToFreq(midi: Int): Double = 440.0 * 2.0.pow((midi - 69) / 12.0)
@@ -71,78 +71,6 @@ object Synth {
 
         shape(out, 0.004)
         return out.map { it.toFloat() }.toFloatArray()
-    }
-
-    // ---- alto sax --------------------------------------------------------
-
-    /**
-     * A reed rather than a struck or plucked string: it sustains instead of
-     * decaying, so a harmonic interval holds for as long as it is played.
-     *
-     * Additive again, but shaped by formants rather than by a falling
-     * amplitude curve — the sax's character is that fixed resonance around
-     * 700 Hz and 1.4 kHz, not the relative strength of its partials. Phase is
-     * accumulated per sample rather than rotated, because the vibrato moves
-     * the frequency and a fixed rotation cannot follow it.
-     */
-    private fun renderSax(freq: Double, seconds: Double): FloatArray {
-        val n = Math.ceil(seconds * SAMPLE_RATE).toInt()
-        val out = DoubleArray(n)
-        val nyquist = SAMPLE_RATE * 0.45
-
-        // body resonances, plus a floor so the upper partials do not vanish
-        fun formant(f: Double): Double =
-            exp(-((f - 700.0) / 420.0).pow(2)) * 1.0 +
-            exp(-((f - 1400.0) / 650.0).pow(2)) * 0.55 +
-            exp(-((f - 2600.0) / 900.0).pow(2)) * 0.22 + 0.16
-
-        val partials = ArrayList<Pair<Double, Double>>()   // harmonic number, amplitude
-        for (p in 1..18) {
-            val f = p * freq
-            if (f > nyquist) break
-            partials.add(Pair(p.toDouble(), p.toDouble().pow(-0.75) * formant(f)))
-        }
-        var sum = 0.0
-        for ((_, a) in partials) sum += a
-        val scale = 0.9 / sum
-
-        val phases = DoubleArray(partials.size)
-        val vibHz = 5.2
-        val twoPi = 2 * Math.PI
-
-        for (i in 0 until n) {
-            val t = i.toDouble() / SAMPLE_RATE
-            // vibrato eases in; a reed player does not start with it
-            val depth = 0.004 * ((t - 0.25) / 0.5).coerceIn(0.0, 1.0)
-            val bend = 1.0 + depth * sin(twoPi * vibHz * t)
-            var v = 0.0
-            for (k in partials.indices) {
-                val (h, a) = partials[k]
-                phases[k] += twoPi * h * freq * bend / SAMPLE_RATE
-                v += a * sin(phases[k])
-            }
-            out[i] = v * scale * saxEnvelope(t, seconds)
-        }
-
-        // breath at the onset, which is most of what makes a reed read as one
-        var lp = 0.0
-        val bn = (SAMPLE_RATE * 0.09).toInt()
-        for (i in 0 until bn) {
-            lp += 0.35 * ((Random.nextDouble() * 2 - 1) - lp)
-            out[i] += lp * 0.09 * (1 - i.toDouble() / bn)
-        }
-
-        shape(out, 0.045)
-        return out.map { it.toFloat() }.toFloatArray()
-    }
-
-    /** Attack, a slight settle, then hold — not the decay of a struck string. */
-    private fun saxEnvelope(t: Double, total: Double): Double {
-        val release = 0.18
-        val a = if (t < 0.055) t / 0.055 else 1.0
-        val settle = if (t < 0.22) 1.0 else 0.88 + 0.12 * exp(-(t - 0.22) * 6)
-        val r = if (t > total - release) ((total - t) / release).coerceIn(0.0, 1.0) else 1.0
-        return a * settle * r
     }
 
     // ---- plucked string --------------------------------------------------
@@ -211,7 +139,6 @@ object Synth {
             Voice.PIANO -> renderPiano(f, seconds)
             Voice.NYLON -> renderPluck(f, seconds, 0.34, 1.9, 0.11, 0.0)
             Voice.STEEL -> renderPluck(f, seconds, 0.56, 3.1, 0.40, 0.06)
-            Voice.SAX -> renderSax(f, seconds)
         }
         var peak = 1e-9f
         for (v in raw) peak = max(peak, abs(v))

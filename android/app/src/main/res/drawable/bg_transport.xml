@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same shape as bg_reset, so the pair reads as one control. Only the fill
+     differs: one starts the drill, the other throws work away. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/aqua" />
+    <corners android:radius="10dp" />
+</shape>

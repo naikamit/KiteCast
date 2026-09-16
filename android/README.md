@@ -34,10 +34,16 @@ lessons inside each, with a live tally beside every one.
 weighted towards what you miss, a root that never repeats twice running, and an
 instrument picked at random. Reset clears the tally and keeps going.
 
-**Four voices**, one of them a reed: piano, classical guitar, acoustic guitar
-and alto sax. The sax sustains where the others decay, so a harmonic interval
-holds for as long as it is played. The instrument and the direction are logged
-but never shown — on a melodic lesson, "ascending" is half the answer.
+**Three voices**: piano, classical guitar, acoustic guitar. The instrument and
+the direction are logged but never shown — on a melodic lesson, "ascending" is
+half the answer.
+
+**Nothing narrates the microphone.** No "listening" caption, no running
+transcript. Neither tells you anything you could not already hear, and both
+pull the eye back to a screen you are supposed to be ignoring. The page is
+ordered for a thumb: what to say, then start and reset, then the two
+mid-question controls, then the score — as ticks and crosses, the same two
+marks the menu uses.
 
 **Most of the web app's session code is gone.** The self-echo gate, the restart
 churn, the reopen-gap backoff, the visibility juggling, the wake lock, the
