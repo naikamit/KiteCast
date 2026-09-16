@@ -120,10 +120,47 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         working-directory: android/app/build/outputs/apk/debug
         run: |
+          set -euo pipefail
           cp *.apk ear.apk
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest ear.apk \
-            --target "$GITHUB_SHA" \
-            --title "Ear — latest build" \
-            --notes "Debug build of \`${GITHUB_SHA:0:7}\`. Open this page on the phone and tap \`ear.apk\` to install."
-          echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/ear.apk"
+          NOTES="Debug build of \`${GITHUB_SHA:0:7}\`. Open this page on the phone and tap \`ear.apk\` to install."
+
+          # Deleting the tag and recreating the release races: the ref is still
+          # being removed when `create` runs, the tag cannot be made, and gh
+          # quietly falls back to an untagged DRAFT — which has no download URL
+          # at all. So the tag is never deleted, only moved, and the asset is
+          # replaced in place.
+          #
+          # Clear any draft a previous run left holding the name first, or the
+          # upload below would land on it and stay invisible.
+          gh api "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq '.[] | select(.tag_name=="latest" and .draft) | .id' |
+            while read -r id; do
+              echo "removing stale draft release $id"
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/$id"
+            done
+
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin latest
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest ear.apk --clobber
+            gh release edit latest --title "Ear — latest build" --notes "$NOTES"
+          else
+            gh release create latest ear.apk --title "Ear — latest build" --notes "$NOTES"
+          fi
+
+      # A green publish step has lied before: it "succeeded" while leaving a
+      # draft nobody could download. Prove the link works before calling it done.
+      - name: Prove the link is downloadable
+        if: success() && github.ref_name == 'claude/trade-share-prd-dnl2il'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/ear.apk"
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/latest" --jq .draft)" != "false" ]; then
+            echo "::error::the release is a draft and has no public URL"; exit 1
+          fi
+          CODE=$(curl -sIL -o /dev/null -w '%{http_code}' "$URL")
+          [ "$CODE" = "200" ] || { echo "::error::$URL returned $CODE"; exit 1; }
+          echo "Direct link: $URL"
