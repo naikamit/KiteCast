@@ -30,8 +30,8 @@ class EarService : Service() {
 
     interface Observer {
         fun onStatus(text: String, tone: Int)
-        fun onTally(text: String)
-        fun onTransport(label: String)
+        fun onTally(right: String, wrong: String)
+        fun onTransport(playing: Boolean)
         fun onLog(line: String)
         fun onLesson(lesson: Lesson)
         fun onScores()
@@ -196,17 +196,6 @@ class EarService : Service() {
         stopSelf()
     }
 
-    /** Play the current question again. A button now, not a spoken word. */
-    fun repeatQuestion() {
-        if (!running || paused) return
-        if (phase != Phase.LISTENING && phase != Phase.CONFIRMING) return
-        current?.let { q ->
-            q.replays++
-            scope.launch { play(q); phase = Phase.LISTENING }
-        }
-        armSilence()
-    }
-
     /** Wipe the score and keep going. The questions never run out. */
     fun resetScore() {
         seen = 0; correct = 0; firstHearing = 0
@@ -214,11 +203,6 @@ class EarService : Service() {
         pushTally()
         observer?.onScores()
         log("mic", "score reset")
-    }
-
-    fun skipQuestion() {
-        if (!running || paused) return
-        if (phase == Phase.LISTENING || phase == Phase.CONFIRMING) resolve(null)
     }
 
     fun setLesson(next: Lesson) {
@@ -489,13 +473,13 @@ class EarService : Service() {
 
     private fun pushTally() {
         observer?.onTally(
-            if (seen == 0) "" else "$correct \u2713    ${seen - correct} \u2717")
+            if (seen == 0) "" else "$correct \u2713",
+            if (seen == 0) "" else "${seen - correct} \u2717")
         notifyBar()
     }
 
     private fun pushTransport() {
-        observer?.onTransport(if (!running) (if (seen > 0) "Resume" else "Start")
-                              else if (paused) "Resume" else "Pause")
+        observer?.onTransport(running && !paused)
     }
 
     private fun log(kind: String, message: String) {

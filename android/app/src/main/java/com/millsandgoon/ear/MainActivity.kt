@@ -72,8 +72,6 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
         }
 
         ui.menu.setOnClickListener { ui.drawer.openDrawer(GravityCompat.START) }
-        ui.again.setOnClickListener { service?.repeatQuestion() }
-        ui.skip.setOnClickListener { service?.skipQuestion() }
         ui.reset.setOnClickListener { service?.resetScore() }
 
         ui.transport.setOnClickListener {
@@ -213,8 +211,16 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
         }))
     }
 
-    override fun onTally(text: String) = runOnUiThread { ui.tally.text = text }
-    override fun onTransport(label: String) = runOnUiThread { ui.transport.text = label }
+    override fun onTally(right: String, wrong: String) = runOnUiThread {
+        ui.tallyRight.text = right
+        ui.tallyWrong.text = wrong
+    }
+
+    /** One button, two states — the icon is the label. */
+    override fun onTransport(playing: Boolean) = runOnUiThread {
+        ui.transport.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+        ui.transport.contentDescription = if (playing) "Pause" else "Start"
+    }
     override fun onScores() = runOnUiThread { menu.notifyDataSetChanged() }
 
     override fun onLog(line: String) = runOnUiThread {

@@ -536,10 +536,14 @@ def test_the_voice_only_answers():
         assert word not in grammar, word
 
 
-def test_the_controls_exist_as_buttons():
+def test_the_page_carries_one_control_and_one_reset():
+    """Play again and Skip are gone: mid-question there is nothing to decide,
+    and two dim buttons under the answer were two things to read past."""
     app = (ANDROID_SRC / "EarService.kt").read_text()
-    assert "fun repeatQuestion()" in app
-    assert "fun skipQuestion()" in app
+    assert "fun repeatQuestion()" not in app
+    assert "fun skipQuestion()" not in app
+    xml = LAYOUT.read_text()
+    assert "@+id/again" not in xml and "@+id/skip" not in xml
 
 
 def test_silence_repeats_rather_than_scoring_a_miss():
@@ -589,23 +593,46 @@ def test_nothing_narrates_the_microphone():
 
 
 def test_the_score_is_the_same_two_marks_everywhere():
-    """Ticks and crosses on the main page exactly as in the menu."""
+    """Ticks and crosses on the main page exactly as in the menu — same two
+    marks, and the same green and red, so one reads as the other."""
     app = (ANDROID_SRC / "EarService.kt").read_text()
     assert "\\u2713" in app and "\\u2717" in app
     assert "on first hearing" not in app
     item = (LAYOUT.parent / "item_lesson.xml").read_text()
     assert "scoreRight" in item and "scoreWrong" in item
 
+    xml = LAYOUT.read_text()
+    for view, colour in (("tallyRight", "@color/ok"), ("tallyWrong", "@color/bad")):
+        block = xml[xml.index(f'@+id/{view}"'):]
+        block = block[:block.index("/>")]
+        assert f'android:textColor="{colour}"' in block, view
+
 
 def test_the_page_is_ordered_for_a_thumb():
-    """Speak-the-answer, then start/reset, then the mid-question controls, then
-    the score. Buttons big enough to hit without looking."""
+    """Speak-the-answer, then the score with its reset, then play/pause at the
+    bottom where the thumb already rests. Both buttons big enough to hit
+    without looking."""
     xml = LAYOUT.read_text()
     order = [xml.index(f'@+id/{i}"') for i in
-             ("sayable", "transport", "reset", "again", "skip", "tally")]
+             ("sayable", "tallyRight", "tallyWrong", "reset", "transport")]
     assert order == sorted(order), "main page is out of order"
-    assert xml.count('android:layout_height="74dp"') == 2      # start and reset
-    assert xml.count('android:layout_height="62dp"') == 2      # again and skip
+    assert xml.count('android:layout_height="74dp"') == 2      # reset and transport
+
+
+def test_the_two_buttons_are_icons():
+    """Driving, you read a shape, not a word — and "Resume" never fits the
+    button that also means Start."""
+    xml = LAYOUT.read_text()
+    for view in ("reset", "transport"):
+        block = xml[xml.index(f'@+id/{view}"'):]
+        block = block[:block.index("/>")]
+        assert "android:src=" in block and "android:text=" not in block, view
+
+    app = (ANDROID_SRC / "MainActivity.kt").read_text()
+    assert "R.drawable.ic_pause" in app and "R.drawable.ic_play" in app
+    d = LAYOUT.parent.parent / "drawable"
+    for icon in ("ic_play.xml", "ic_pause.xml", "ic_reset.xml"):
+        assert (d / icon).exists(), icon
 
 
 def test_start_and_reset_are_the_same_shape():
