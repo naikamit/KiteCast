@@ -85,6 +85,7 @@ class EarService : Service() {
     private lateinit var speaker: Speaker
     private lateinit var listener: Listener
     private lateinit var progress: Progress
+    private lateinit var routing: Routing
     private var modelReady = false
     private var startPending = false
 
@@ -92,6 +93,12 @@ class EarService : Service() {
         super.onCreate()
         player = Player()
         progress = Progress(this) { k, m -> log(k, m) }
+        // A headset takes the whole session — tones, prompts and answers — or
+        // none of it. Half of each is what sounded broken: the earbuds played
+        // and the phone in your pocket listened.
+        // The callback lands on the main thread; re-opening capture waits on a
+        // worker, so it does not belong there.
+        routing = Routing(this, { k, m -> log(k, m) }) { scope.launch { adoptRoute() } }
         speaker = Speaker(this) { log("say", "voice ready") }
         listener = Listener(this,
             onLog = { k, m -> log(k, m) },
@@ -129,6 +136,7 @@ class EarService : Service() {
 
     override fun onDestroy() {
         loop?.cancel(); silence?.cancel()
+        routing.shutdown()
         player.stop(); speaker.release(); listener.release()
         scope.cancel()
         super.onDestroy()
@@ -165,8 +173,23 @@ class EarService : Service() {
     }
 
     private fun beginDrill() {
+        routing.engage()
+        adoptRoute()
         listener.setPaused(false)
         ask()
+    }
+
+    /**
+     * Follow the route wherever it went. The recogniser has to be picked up
+     * again by hand: its microphone is chosen when capture opens, so one that
+     * started on the phone stays on the phone however the earbuds are routed.
+     */
+    private fun adoptRoute() {
+        val headset = routing.onHeadset
+        player.viaHeadset = headset
+        speaker.setVoiceRoute(headset)
+        listener.preferred = routing.micDevice()
+        if (listener.listening) listener.restart()
     }
 
     fun pause() {
@@ -195,6 +218,7 @@ class EarService : Service() {
         loop?.cancel(); silence?.cancel()
         player.stop(); speaker.stop()
         listener.setPaused(true)
+        routing.release()
         log("mic", "session stopped")
         if (asked > 0) say("That's $hits of $asked. ${pct(hits, asked)} percent.") {}
         status("", TONE_PLAIN)
