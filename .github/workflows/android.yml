@@ -74,6 +74,27 @@ jobs:
           for f in *.apk; do mv "$f" "ear-${GITHUB_SHA::7}.apk"; done
           ls -la
 
+      - name: What is actually in the APK
+        if: success()
+        working-directory: android/app/build/outputs/apk/debug
+        run: |
+          APK=$(ls *.apk)
+          echo "APK on disk: $(stat -c%s "$APK" | numfmt --to=iec)"
+          echo
+          echo "=== by area (compressed / uncompressed) ==="
+          unzip -v "$APK" | awk '
+            NF>=8 && $1 ~ /^[0-9]+$/ {
+              split($8, p, "/")
+              area = (p[1]=="assets" || p[1]=="lib") && p[2]!="" ? p[1]"/"p[2] : p[1]
+              raw[area]+=$1; zip[area]+=$3
+            }
+            END { for (k in zip) printf "%9.1f MB  %9.1f MB  %s\n", zip[k]/1048576, raw[k]/1048576, k }
+          ' | sort -rn
+          echo
+          echo "=== ten largest files (compressed) ==="
+          unzip -v "$APK" | awk 'NF>=8 && $1 ~ /^[0-9]+$/ {printf "%8.1f MB  %s\n", $3/1048576, $8}' \
+            | sort -rn | head -10
+
       - uses: actions/upload-artifact@v4
         if: success()
         with:
