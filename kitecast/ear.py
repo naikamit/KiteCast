@@ -15,6 +15,7 @@ import json
 import re
 import threading
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 # id -> (semitones, spoken name). Ordered by size, which is the order the
@@ -36,29 +37,69 @@ INTERVALS: dict[str, tuple[int, str]] = {
 
 ALL = list(INTERVALS)
 
+# Chords are the same exercise with more notes: offsets above the root, played
+# as a block. Naming a chord quality is the same act of recall as naming an
+# interval, so they share the drill, the scoring and the mastery store.
+CHORDS: dict[str, tuple[tuple[int, ...], str]] = {
+    "maj":  ((4, 7), "major"),
+    "min":  ((3, 7), "minor"),
+    "dim":  ((3, 6), "diminished"),
+    "aug":  ((4, 8), "augmented"),
+    "maj7": ((4, 7, 11), "major seventh"),
+    "dom7": ((4, 7, 10), "dominant seventh"),
+    "min7": ((3, 7, 10), "minor seventh"),
+    "m7b5": ((3, 6, 10), "half diminished"),
+    "dim7": ((3, 6, 9), "diminished seventh"),
+}
+
+ALL_CHORDS = list(CHORDS)
+
+
+class Group(str, Enum):
+    """The top level of the menu: what kind of thing you are naming."""
+    HARMONIC = "harmonic"
+    MELODIC = "melodic"
+    CHORDS = "chords"
+
+
+class Kind(str, Enum):
+    INTERVAL = "interval"
+    CHORD = "chord"
+
 
 @dataclass(frozen=True)
 class Lesson:
     n: int
     title: str
-    mode: str            # "harmonic" | "melodic"
+    mode: str            # "harmonic" | "melodic" — how the notes are played
     set: tuple[str, ...]
+    group: Group = Group.HARMONIC
+    kind: Kind = Kind.INTERVAL
 
+
+H, M, C = Group.HARMONIC, Group.MELODIC, Group.CHORDS
+IV, CH = Kind.INTERVAL, Kind.CHORD
 
 LESSONS: tuple[Lesson, ...] = (
-    Lesson(1,  "Harmonic: Seconds",                     "harmonic", ("m2", "M2")),
-    Lesson(2,  "Melodic: Seconds",                      "melodic",  ("m2", "M2")),
-    Lesson(3,  "Harmonic: Thirds",                      "harmonic", ("m3", "M3")),
-    Lesson(4,  "Melodic: Thirds",                       "melodic",  ("m3", "M3")),
-    Lesson(5,  "Harmonic: Fourths and Fifths",          "harmonic", ("P4", "TT", "P5")),
-    Lesson(6,  "Melodic: Fourths and Fifths",           "melodic",  ("P4", "TT", "P5")),
-    Lesson(7,  "Harmonic: Sixths",                      "harmonic", ("m6", "M6")),
-    Lesson(8,  "Melodic: Sixths",                       "melodic",  ("m6", "M6")),
-    Lesson(9,  "Harmonic: Sevenths",                    "harmonic", ("m7", "M7")),
-    Lesson(10, "Melodic: Sevenths",                     "melodic",  ("m7", "M7")),
-    Lesson(11, "Harmonic: Tritones and Major Sevenths", "harmonic", ("TT", "M7")),
-    Lesson(12, "All Intervals: Harmonic",               "harmonic", tuple(ALL)),
-    Lesson(13, "All Intervals: Melodic",                "melodic",  tuple(ALL)),
+    Lesson(1,  "Seconds",                     "harmonic", ("m2", "M2"), H, IV),
+    Lesson(2,  "Thirds",                      "harmonic", ("m3", "M3"), H, IV),
+    Lesson(3,  "Fourths and Fifths",          "harmonic", ("P4", "TT", "P5"), H, IV),
+    Lesson(4,  "Sixths",                      "harmonic", ("m6", "M6"), H, IV),
+    Lesson(5,  "Sevenths",                    "harmonic", ("m7", "M7"), H, IV),
+    Lesson(6,  "Tritones and Major Sevenths", "harmonic", ("TT", "M7"), H, IV),
+    Lesson(7,  "All Intervals",               "harmonic", tuple(ALL), H, IV),
+
+    Lesson(8,  "Seconds",                     "melodic",  ("m2", "M2"), M, IV),
+    Lesson(9,  "Thirds",                      "melodic",  ("m3", "M3"), M, IV),
+    Lesson(10, "Fourths and Fifths",          "melodic",  ("P4", "TT", "P5"), M, IV),
+    Lesson(11, "Sixths",                      "melodic",  ("m6", "M6"), M, IV),
+    Lesson(12, "Sevenths",                    "melodic",  ("m7", "M7"), M, IV),
+    Lesson(13, "All Intervals",               "melodic",  tuple(ALL), M, IV),
+
+    Lesson(14, "Major and Minor Triads",      "harmonic", ("maj", "min"), C, CH),
+    Lesson(15, "All Four Triads",             "harmonic", ("maj", "min", "dim", "aug"), C, CH),
+    Lesson(16, "Sevenths: Three",             "harmonic", ("maj7", "dom7", "min7"), C, CH),
+    Lesson(17, "All Sevenths",                "harmonic", tuple(ALL_CHORDS[4:]), C, CH),
 )
 
 _SAFE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -73,6 +114,17 @@ def lesson(n: int) -> Lesson | None:
         if l.n == n:
             return l
     return None
+
+
+def display(item_id: str) -> str:
+    """The spoken name of an interval or a chord."""
+    if item_id in INTERVALS:
+        return INTERVALS[item_id][1]
+    return CHORDS[item_id][1]
+
+
+def every_item() -> list[str]:
+    return ALL + ALL_CHORDS
 
 
 def _blank() -> dict:
@@ -122,7 +174,7 @@ class Progress:
     def intervals(self, learner: str) -> dict[str, dict]:
         """Counts for every interval, including ones never drilled."""
         stored = self._read(learner)
-        return {i: {**_blank(), **stored.get(i, {})} for i in ALL}
+        return {i: {**_blank(), **stored.get(i, {})} for i in every_item()}
 
     def summary(self, learner: str) -> dict:
         by = self.intervals(learner)

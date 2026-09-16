@@ -1,11 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingStart="22dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="38dp"
     android:paddingEnd="22dp"
-    android:paddingTop="15dp"
-    android:paddingBottom="15dp"
-    android:textColor="@color/ink_dim"
-    android:textSize="15sp"
-    android:background="?android:attr/selectableItemBackground" />
+    android:paddingTop="13dp"
+    android:paddingBottom="13dp"
+    android:background="?android:attr/selectableItemBackground">
+
+    <TextView
+        android:id="@+id/lessonName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/ink_dim"
+        android:textSize="15sp" />
+
+    <!-- live while you play, cleared only by Reset -->
+    <TextView
+        android:id="@+id/scoreRight"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:textColor="@color/ok"
+        android:textSize="14sp"
+        android:fontFamily="monospace" />
+
+    <TextView
+        android:id="@+id/scoreWrong"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:textColor="@color/bad"
+        android:textSize="14sp"
+        android:fontFamily="monospace" />
+</LinearLayout>

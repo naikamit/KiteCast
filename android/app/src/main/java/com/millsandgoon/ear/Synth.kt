@@ -221,26 +221,34 @@ object Synth {
     }
 
     /**
-     * One whole question as a single buffer. The web version scheduled two
+     * One whole question as a single buffer. The web version scheduled several
      * sources; here mixing up front is both simpler and lower latency.
+     *
+     * `offsets` are semitones above the root, so a two-note interval and a
+     * four-note seventh chord are the same shape of thing.
      */
-    fun renderQuestion(voice: Voice, lowMidi: Int, semitones: Int,
+    fun renderQuestion(voice: Voice, rootMidi: Int, offsets: List<Int>,
                        melodic: Boolean, descending: Boolean): FloatArray {
-        val high = lowMidi + semitones
+        var midis = listOf(rootMidi) + offsets.map { rootMidi + it }
+        // More notes sharing one output need more headroom, or a four-note
+        // chord clips where a two-note interval did not.
+        val gain = (0.85f / Math.sqrt(midis.size.toDouble()).toFloat()) * 1.25f
+
         if (!melodic) {
-            val a = note(voice, lowMidi, 3.0)
-            val b = note(voice, high, 3.0)
-            val out = FloatArray(max(a.size, b.size))
-            for (i in a.indices) out[i] += a[i] * 0.85f
-            for (i in b.indices) out[i] += b[i] * 0.85f
+            val rendered = midis.map { note(voice, it, 3.0) }
+            val out = FloatArray(rendered.maxOf { it.size })
+            for (r in rendered) for (i in r.indices) out[i] += r[i] * gain
             return out
         }
-        val gap = (0.62 * SAMPLE_RATE).toInt()
-        val first = note(voice, if (descending) high else lowMidi, 2.2)
-        val second = note(voice, if (descending) lowMidi else high, 2.6)
-        val out = FloatArray(max(first.size, gap + second.size))
-        for (i in first.indices) out[i] += first[i] * 0.85f
-        for (i in second.indices) out[gap + i] += second[i] * 0.85f
+
+        if (descending) midis = midis.reversed()
+        val step = (0.62 * SAMPLE_RATE).toInt()
+        val rendered = midis.mapIndexed { k, m -> note(voice, m, if (k == midis.size - 1) 2.6 else 2.2) }
+        val out = FloatArray(rendered.indices.maxOf { it * step + rendered[it].size })
+        for ((k, r) in rendered.withIndex()) {
+            val at = k * step
+            for (i in r.indices) out[at + i] += r[i] * gain
+        }
         return out
     }
 
