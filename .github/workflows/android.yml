@@ -4,6 +4,10 @@ name: Android
 # so compile errors land in a log that can be read and fixed without a phone
 # or an IDE in the loop.
 
+# Publishing the APK to a release needs write access to repository contents.
+permissions:
+  contents: write
+
 on:
   push:
     paths:
@@ -101,3 +105,21 @@ jobs:
           name: ear-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Workflow artifacts are always zipped, and a phone cannot install a zip.
+      # A release asset is served as the file itself, so the link below can be
+      # opened on the phone and tapped straight into the installer. The tag is
+      # rolling: it is replaced on every build, so the URL never changes.
+      - name: Publish the APK where a phone can install it
+        if: success() && github.ref_name == 'claude/trade-share-prd-dnl2il'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: android/app/build/outputs/apk/debug
+        run: |
+          cp *.apk ear.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest ear.apk \
+            --target "$GITHUB_SHA" \
+            --title "Ear — latest build" \
+            --notes "Debug build of \`${GITHUB_SHA:0:7}\`. Open this page on the phone and tap \`ear.apk\` to install."
+          echo "Direct link: https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/ear.apk"
