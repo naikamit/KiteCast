@@ -97,75 +97,57 @@
                     android:textSize="30sp" />
             </LinearLayout>
 
-            <!-- 2. start, and undo -->
+            <!-- 2. the score, in the same two marks as the menu, with the
+                 one button that empties it sitting on the same line -->
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/transport"
-                    android:layout_width="0dp"
-                    android:layout_height="74dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_transport"
-                    android:textColor="@color/ground"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:text="Start" />
-
-                <Button
-                    android:id="@+id/reset"
-                    android:layout_width="0dp"
-                    android:layout_height="74dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:background="@drawable/bg_reset"
-                    android:textColor="@color/ink_dim"
-                    android:textSize="18sp"
-                    android:text="Reset" />
-            </LinearLayout>
-
-            <!-- 3. the two things you do mid-question -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/again"
-                    android:layout_width="0dp"
-                    android:layout_height="62dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_reset"
-                    android:textColor="@color/ink_dim"
-                    android:textSize="16sp"
-                    android:text="Play again" />
-
-                <Button
-                    android:id="@+id/skip"
-                    android:layout_width="0dp"
-                    android:layout_height="62dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:background="@drawable/bg_reset"
-                    android:textColor="@color/ink_dim"
-                    android:textSize="16sp"
-                    android:text="Skip" />
-            </LinearLayout>
-
-            <!-- 4. the score, in the same two marks as the menu -->
-            <TextView
-                android:id="@+id/tally"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="26dp"
-                android:gravity="center"
-                android:textSize="26sp"
-                android:textColor="@color/ink_dim"
-                android:fontFamily="monospace" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/tallyRight"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:layout_marginEnd="14dp"
+                    android:textColor="@color/ok"
+                    android:textSize="26sp"
+                    android:fontFamily="monospace" />
+
+                <TextView
+                    android:id="@+id/tallyWrong"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:textColor="@color/bad"
+                    android:textSize="26sp"
+                    android:fontFamily="monospace" />
+
+                <ImageButton
+                    android:id="@+id/reset"
+                    android:layout_width="74dp"
+                    android:layout_height="74dp"
+                    android:layout_marginStart="12dp"
+                    android:background="@drawable/bg_reset"
+                    android:scaleType="center"
+                    android:contentDescription="Reset the score"
+                    android:src="@drawable/ic_reset" />
+            </LinearLayout>
+
+            <!-- 3. the only thing your thumb reaches for without looking -->
+            <ImageButton
+                android:id="@+id/transport"
+                android:layout_width="match_parent"
+                android:layout_height="74dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/bg_transport"
+                android:scaleType="center"
+                android:contentDescription="Start"
+                android:src="@drawable/ic_play" />
 
             <Space
                 android:layout_width="match_parent"

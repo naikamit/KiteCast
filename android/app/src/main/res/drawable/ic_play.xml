@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid triangle: reads at arm's length, on a phone on a car cradle. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="34dp"
+    android:height="34dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="@color/ground">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5.2 L19,12 L8,18.8 Z" />
+</vector>
