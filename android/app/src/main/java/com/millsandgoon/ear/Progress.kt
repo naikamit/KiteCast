@@ -1,92 +1,77 @@
 package com.millsandgoon.ear
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
- * Mastery lives on the same server the web app uses, so progress follows you
- * between the phone and the desk. Everything here is best-effort: losing a
- * tally must never interrupt a drill.
+ * Your record against every interval and chord, kept on the phone.
+ *
+ * It used to live on a server so the phone and the desk could share it. There
+ * is no desk any more, and a record that needed a connection was a record that
+ * quietly lost every answer you gave on a train — the POST failed, nothing
+ * retried, and the drill went on weighting questions off a stale copy. This
+ * cannot fail that way: the write is local and it happens before the next
+ * question is asked.
  */
 class Progress(context: Context, private val onLog: (String, String) -> Unit) {
 
     private val prefs = context.getSharedPreferences("ear", Context.MODE_PRIVATE)
-    @Volatile private var cookie: String? = prefs.getString("learner", null)
-    @Volatile var lifetime: Map<String, Triple<Int, Int, Int>> = emptyMap()   // seen, correct, first
+
+    /** id → seen, correct, right-on-first-hearing. Replaced whole, never
+     *  mutated, so the drill loop can read it without locking. */
+    @Volatile var lifetime: Map<String, Triple<Int, Int, Int>> = emptyMap()
         private set
 
-    private fun open(path: String, method: String): HttpURLConnection {
-        val c = URL(BASE + path).openConnection() as HttpURLConnection
-        c.requestMethod = method
-        c.connectTimeout = 8000
-        c.readTimeout = 8000
-        cookie?.let { c.setRequestProperty("Cookie", "ear_learner=$it") }
-        return c
-    }
-
-    /** The server hands out the learner id on the page itself, so ask once. */
-    private fun ensureLearner() {
-        if (cookie != null) return
-        try {
-            val c = open("/ear/", "GET")
-            c.inputStream.use { it.readBytes() }
-            val set = c.headerFields["Set-Cookie"]?.firstOrNull { it.startsWith("ear_learner=") }
-            val token = set?.substringAfter("ear_learner=")?.substringBefore(";")
-            if (!token.isNullOrBlank()) {
-                cookie = token
-                prefs.edit().putString("learner", token).apply()
-                onLog("mic", "registered with the server")
-            }
-            c.disconnect()
-        } catch (e: Exception) {
-            onLog("warn", "no server: ${e.message}")
-        }
-    }
-
     fun load() {
+        // A leftover from the server days. Harmless, but it named this phone
+        // to something that no longer exists.
+        if (prefs.contains(LEGACY_LEARNER)) prefs.edit().remove(LEGACY_LEARNER).apply()
+
+        val raw = prefs.getString(KEY, null) ?: return
         try {
-            ensureLearner()
-            val c = open("/ear/api/progress", "GET")
-            val body = c.inputStream.bufferedReader().use(BufferedReader::readText)
-            c.disconnect()
-            val o = JSONObject(body)
-            val by = o.optJSONObject("intervals") ?: return
+            val o = JSONObject(raw)
             val out = HashMap<String, Triple<Int, Int, Int>>()
-            for (id in by.keys()) {
-                val r = by.getJSONObject(id)
-                out[id] = Triple(r.optInt("seen"), r.optInt("correct"), r.optInt("first"))
+            for (id in o.keys()) {
+                val a = o.getJSONArray(id)
+                out[id] = Triple(a.getInt(0), a.getInt(1), a.getInt(2))
             }
             lifetime = out
-            val seen = o.optInt("seen")
-            if (seen > 0) onLog("mic", "all time: $seen answers, ${Math.round(o.optDouble("accuracy") * 100)}%")
+            val seen = out.values.sumOf { it.first }
+            val correct = out.values.sumOf { it.second }
+            if (seen > 0) onLog("mic", "all time: $seen answers, ${pct(correct, seen)}%")
         } catch (e: Exception) {
-            onLog("warn", "progress unavailable: ${e.message}")
+            // A half-written file is worth less than an empty one — starting
+            // over costs a few questions of weighting, nothing else.
+            onLog("warn", "record unreadable, starting fresh: ${e.message}")
+            prefs.edit().remove(KEY).apply()
         }
     }
 
+    @Synchronized
     fun record(interval: String, correct: Boolean, firstListen: Boolean) {
-        try {
-            ensureLearner()
-            val c = open("/ear/api/answer", "POST")
-            c.doOutput = true
-            c.setRequestProperty("Content-Type", "application/json")
-            val body = JSONObject()
-                .put("interval", interval)
-                .put("correct", correct)
-                .put("first_listen", firstListen)
-                .toString()
-            c.outputStream.use { it.write(body.toByteArray()) }
-            c.inputStream.use { it.readBytes() }
-            c.disconnect()
-        } catch (_: Exception) {
-            // Offline on a train is the normal case, not an error.
-        }
+        val prior = lifetime[interval] ?: Triple(0, 0, 0)
+        val next = HashMap(lifetime)
+        next[interval] = Triple(
+            prior.first + 1,
+            prior.second + if (correct) 1 else 0,
+            prior.third + if (firstListen) 1 else 0)
+        lifetime = next
+        save(next)
     }
+
+    private fun save(map: Map<String, Triple<Int, Int, Int>>) {
+        val o = JSONObject()
+        for ((id, t) in map) {
+            o.put(id, JSONArray().put(t.first).put(t.second).put(t.third))
+        }
+        prefs.edit().putString(KEY, o.toString()).apply()
+    }
+
+    private fun pct(a: Int, b: Int) = if (b == 0) 0 else Math.round(100.0 * a / b).toInt()
 
     companion object {
-        const val BASE = "https://millsandgoon.com"
+        private const val KEY = "lifetime"
+        private const val LEGACY_LEARNER = "learner"
     }
 }

@@ -33,10 +33,6 @@ class Settings:
     # /admin). Everything Kite 404s there. Comma-separated; the www. form of
     # each is matched too. Empty = no such domain, app behaves as one site.
     books_host: str = field(default_factory=lambda: _env("BOOKS_HOST"))
-    # Public domain that serves ONLY the ear trainer, at /. Everything else
-    # 404s there. Comma-separated; the www. form of each is matched too.
-    # Empty = no such domain; the trainer still lives at /ear everywhere.
-    ear_host: str = field(default_factory=lambda: _env("EAR_HOST"))
     # Open decision 10 — share timing: "fill" (default) or "placement".
     share_timing_entry: str = field(default_factory=lambda: _env("SHARE_TIMING_ENTRY", "fill"))
     share_timing_exit: str = field(default_factory=lambda: _env("SHARE_TIMING_EXIT", "fill"))

@@ -4,8 +4,6 @@ mirror/redirect routes are token-scoped. The console itself is
 unauthenticated — keep the URL private."""
 
 import logging
-import mimetypes
-import secrets
 import threading
 import time
 from pathlib import Path
@@ -14,16 +12,11 @@ from urllib.parse import quote
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, PlainTextResponse,
                                RedirectResponse)
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import basket
 from .config import settings
 from .db import Ledger
-from .ear import CHORDS as EAR_CHORDS
-from .ear import INTERVALS as EAR_INTERVALS
-from .ear import LESSONS as EAR_LESSONS
-from .ear import Progress, every_item, safe_learner
 from .ebook import (Library, blocks_to_text, cover_src, image_count, media_type, parse_text_with_images,
                     parse_upload, prepare, split_free, word_count)
 from .instruments import InstrumentStore, days_to_expiry, moneyness
@@ -36,18 +29,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-# ---- single-app public domains (BOOKS_HOST, EAR_HOST) ----
+# ---- single-app public domain (BOOKS_HOST) ----
 #
-# One deployment, three apps, and a hostname decides which one you get. On the
-# books domain the library is at the root and its admin at /admin; on the ear
-# domain the trainer is at the root. Everything belonging to another app is
-# simply not there. On the app's own hostname (the .onrender.com one) nothing
-# is hidden: the console is at /, the library keeps its long /millsandgoons
-# paths, and the trainer sits at /ear.
+# One deployment, two apps, and a hostname decides which one you get. On the
+# books domain the library is at the root and its admin at /admin, and the
+# trading side is simply not there. On the app's own hostname (the
+# .onrender.com one) nothing is hidden: the console is at / and the library
+# keeps its long /millsandgoons paths.
 
 _BOOKS_PASSTHROUGH = ("/favicon.ico", "/apple-touch-icon.png", "/healthz")
-
-EAR_PREFIX = "/ear"
 
 
 def _hosts(configured: str) -> set[str]:
@@ -67,23 +57,6 @@ def books_hosts() -> set[str]:
     return _hosts(settings.books_host)
 
 
-def ear_hosts() -> set[str]:
-    return _hosts(settings.ear_host)
-
-
-def ear_path(path: str) -> str:
-    """Map a path on the ear domain onto the trainer's routes.
-
-    Everything folds under /ear, so the trainer's relative asset paths resolve
-    from the root and every other app's routes land on a URL that does not
-    exist — no separate blocklist to keep in step."""
-    if path in _BOOKS_PASSTHROUGH:
-        return path
-    if path == EAR_PREFIX or path.startswith(EAR_PREFIX + "/"):
-        return path
-    return EAR_PREFIX + path
-
-
 def books_path(path: str) -> str | None:
     """Map a path on the books domain to the route that serves it, or None
     if that path doesn't exist there (everything Kite)."""
@@ -95,8 +68,6 @@ def books_path(path: str) -> str | None:
         return "/millsandgoonsadmin" + path[len("/admin"):]
     if path == "/b" or path.startswith("/b/"):
         return "/millsandgoons" + path
-    if path == "/ear" or path.startswith("/ear/"):
-        return path          # the ear trainer, same path on either hostname
     if path in _BOOKS_PASSTHROUGH or path.startswith("/millsandgoons"):
         return path          # the long URLs keep working if one gets shared
     return None
@@ -138,17 +109,11 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         host = (request.headers.get("host") or "").split(":")[0].lower()
         path = request.url.path
         on_books = host in books_hosts()
-        on_ear = host in ear_hosts() and not on_books
         request.state.on_books = on_books
-        request.state.on_ear = on_ear
         if on_books:
             mapped = books_path(path)
             if mapped is None:          # the trading side doesn't exist here
                 return PlainTextResponse("Not found", status_code=404)
-            request.scope["path"] = mapped
-            request.scope["raw_path"] = mapped.encode()
-        elif on_ear:
-            mapped = ear_path(path)
             request.scope["path"] = mapped
             request.scope["raw_path"] = mapped.encode()
         elif path in ("/admin", "/b") or path.startswith(("/admin/", "/b/")):
@@ -569,81 +534,6 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         if icon_png.exists():
             return FileResponse(icon_png, media_type="image/png")
         return FileResponse(static_dir / "favicon.svg", media_type="image/svg+xml")
-
-    # ---- ear trainer: voice-only interval practice ----
-    #
-    # The drill runs in the browser — the audio is synthesised there and the
-    # answers are spoken — so the server keeps only the part a browser cannot:
-    # mastery per interval, which outlives a session and survives clearing
-    # site data. Storage sits beside the ebook library and shares nothing
-    # with it or with the trading tables.
-
-    ear_root = None
-    if settings.db_path and settings.db_path != ":memory:":
-        ear_root = str(Path(settings.db_path).resolve().with_name("ear_progress"))
-    ear_progress = Progress(ear_root)
-    ear_dir = Path(__file__).resolve().parent.parent / "ear"
-
-    def learner_of(request: Request) -> str:
-        token = request.cookies.get("ear_learner", "")
-        return token if safe_learner(token) else ""
-
-    @app.get("/ear/", include_in_schema=False)
-    def ear_index(request: Request):
-        """The app, plus the cookie that gives this browser a learner id.
-
-        No accounts: the id is opaque, set here, and names nothing but a row
-        of interval counts."""
-        resp = FileResponse(ear_dir / "index.html", media_type="text/html")
-        if not learner_of(request):
-            resp.set_cookie("ear_learner", secrets.token_urlsafe(12),
-                            max_age=60 * 60 * 24 * 365 * 5,
-                            httponly=True, samesite="lax")
-        return resp
-
-    @app.get("/ear/api/progress")
-    def ear_get_progress(request: Request):
-        token = learner_of(request)
-        return ear_progress.summary(token) if token else ear_progress.summary("unknown")
-
-    @app.post("/ear/api/answer")
-    async def ear_record_answer(request: Request):
-        token = learner_of(request)
-        if not token:
-            raise HTTPException(status_code=400, detail="no learner")
-        body = await request.json()
-        interval = body.get("interval")
-        if interval not in every_item():
-            raise HTTPException(status_code=400, detail="unknown item")
-        return ear_progress.record(token, interval,
-                                   correct=bool(body.get("correct")),
-                                   first_listen=bool(body.get("first_listen")))
-
-    @app.post("/ear/api/reset")
-    def ear_reset(request: Request):
-        token = learner_of(request)
-        if token:
-            ear_progress.reset(token)
-        return {"ok": True}
-
-    @app.get("/ear/api/lessons")
-    def ear_lessons():
-        """The canonical ladder. The client carries its own copy so it works
-        offline; `tests/test_ear.py` fails if the two drift apart."""
-        return {"lessons": [{"n": l.n, "title": l.title, "mode": l.mode,
-                             "group": l.group.value, "kind": l.kind.value,
-                             "set": list(l.set)} for l in EAR_LESSONS],
-                "intervals": {i: {"semitones": s, "name": nm}
-                              for i, (s, nm) in EAR_INTERVALS.items()},
-                "chords": {i: {"offsets": list(o), "name": nm}
-                           for i, (o, nm) in EAR_CHORDS.items()}}
-
-    # Mounted last so the routes above win; html=True redirects /ear to /ear/.
-    if ear_dir.is_dir():
-        # Starlette guesses from the extension, and without this Chrome gets
-        # the manifest as octet-stream and refuses to offer installation.
-        mimetypes.add_type("application/manifest+json", ".webmanifest")
-        app.mount("/ear", StaticFiles(directory=ear_dir, html=True), name="ear")
 
     # ---- friend side: one-tap mirror page ----
 
