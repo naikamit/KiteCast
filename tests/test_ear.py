@@ -457,3 +457,21 @@ def test_recognition_is_grammar_constrained_and_ignores_humming():
     assert "fun voskGrammar()" in src
     assert '"[unk]"' in src
     assert "[unk]" in (ANDROID_SRC / "Listener.kt").read_text()
+
+
+def test_the_speech_model_ships_with_its_uuid_marker():
+    """Vosk's StorageService reads <model>/uuid to decide whether its copy is
+    stale. The plain model zip has no such file, and without it unpacking fails
+    and the app silently has no recogniser at all — which is exactly what it
+    did on the first device run."""
+    workflow = (Path(__file__).resolve().parent.parent
+                / ".github/workflows/android.yml").read_text()
+    assert "model-en-us/uuid" in workflow
+
+
+def test_the_drill_waits_for_the_recogniser():
+    """Starting before the model is unpacked means asking questions that
+    nothing can hear."""
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert "startPending" in app
+    assert "if (!modelReady)" in app

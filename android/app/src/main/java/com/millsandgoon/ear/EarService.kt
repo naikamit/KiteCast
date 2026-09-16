@@ -78,6 +78,7 @@ class EarService : Service() {
     private lateinit var listener: Listener
     private lateinit var progress: Progress
     private var modelReady = false
+    private var startPending = false
 
     override fun onCreate() {
         super.onCreate()
@@ -88,8 +89,19 @@ class EarService : Service() {
             onLog = { k, m -> log(k, m) },
             onPartial = { t -> onHeard(t, false) },
             onFinal = { t -> onHeard(t, true) },
-            onReady = { modelReady = true; listener.start() },
-            onFailed = { m -> log("warn", m) })
+            onReady = {
+                modelReady = true
+                listener.start()
+                if (startPending) { startPending = false; beginDrill() }
+            },
+            onFailed = { m ->
+                log("warn", m)
+                // Without a recogniser the drill cannot be answered, so fall
+                // back to naming the intervals rather than asking questions
+                // into a void — which is what a silent failure looked like.
+                status("No recogniser — listening only", TONE_BAD)
+                if (startPending) { startPending = false; listenMode = true; listenLoop() }
+            })
         listener.load()
         scope.launch { progress.load() }
     }
@@ -131,9 +143,22 @@ class EarService : Service() {
         paused = false
         listenMode = false
         log("mic", "session started")
+        pushTransport()
+
+        // Unpacking the model takes a moment on first launch. Starting the
+        // drill before it is ready means asking questions nothing can hear.
+        if (!modelReady) {
+            startPending = true
+            status("getting the recogniser ready…", TONE_PLAIN)
+            log("mic", "waiting for the speech model")
+            return
+        }
+        beginDrill()
+    }
+
+    private fun beginDrill() {
         listener.setPaused(false)
         ask()
-        pushTransport()
     }
 
     fun pause() {

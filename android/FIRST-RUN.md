@@ -48,6 +48,7 @@ third-party binary.
     curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
     tar -xf vosk-model-small-en-us-0.15.zip
     ren vosk-model-small-en-us-0.15 model-en-us
+    echo vosk-model-small-en-us-0.15> model-en-us\uuid
     del vosk-model-small-en-us-0.15.zip
     dir model-en-us
 
@@ -57,6 +58,7 @@ third-party binary.
     curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
     unzip vosk-model-small-en-us-0.15.zip
     mv vosk-model-small-en-us-0.15 model-en-us
+    echo vosk-model-small-en-us-0.15 > model-en-us/uuid
     rm vosk-model-small-en-us-0.15.zip
     ls model-en-us
 
@@ -150,6 +152,6 @@ point of this build.
 | phone never appears in Android Studio | charge-only cable, or USB mode not set to file transfer |
 | `SDK location not found` | open the `android` folder, not `KiteCast` |
 | build fails on `vosk-android` | version bump needed; send me the error |
-| app runs, hears nothing | model folder in the wrong place — check step 3 |
+| app runs, hears nothing | model folder in the wrong place, or the `uuid` file is missing — check step 3 |
 | works, then stops when locked | Samsung battery optimisation — step 8 |
 | no sound | check the USB-C DAC is seated; the app plays as media, so media volume |

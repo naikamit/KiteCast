@@ -39,7 +39,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: android/app/src/main/assets/model-en-us
-          key: vosk-model-small-en-us-0.15
+          # Bump when anything about how the model is prepared changes —
+          # a stale cache hit skips the fetch step entirely, so the uuid
+          # marker written there would never appear.
+          key: vosk-model-small-en-us-0.15-uuid
 
       - name: Fetch the speech model
         if: steps.model.outputs.cache-hit != 'true'
@@ -49,6 +52,11 @@ jobs:
           unzip -q vosk-model-small-en-us-0.15.zip
           mv vosk-model-small-en-us-0.15 model-en-us
           rm vosk-model-small-en-us-0.15.zip
+          # Vosk's StorageService reads <model>/uuid to decide whether the
+          # copy in internal storage is stale. The models in Vosk's own demo
+          # carry one; the plain zip from alphacephei does not, and without it
+          # unpacking fails and the app never gets a recogniser at all.
+          echo "vosk-model-small-en-us-0.15" > model-en-us/uuid
           ls model-en-us
 
       - uses: gradle/actions/setup-gradle@v4
