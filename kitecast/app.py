@@ -20,9 +20,10 @@ from fastapi.templating import Jinja2Templates
 from . import basket
 from .config import settings
 from .db import Ledger
+from .ear import CHORDS as EAR_CHORDS
 from .ear import INTERVALS as EAR_INTERVALS
 from .ear import LESSONS as EAR_LESSONS
-from .ear import Progress, safe_learner
+from .ear import Progress, every_item, safe_learner
 from .ebook import (Library, blocks_to_text, cover_src, image_count, media_type, parse_text_with_images,
                     parse_upload, prepare, split_free, word_count)
 from .instruments import InstrumentStore, days_to_expiry, moneyness
@@ -612,8 +613,8 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
             raise HTTPException(status_code=400, detail="no learner")
         body = await request.json()
         interval = body.get("interval")
-        if interval not in EAR_INTERVALS:
-            raise HTTPException(status_code=400, detail="unknown interval")
+        if interval not in every_item():
+            raise HTTPException(status_code=400, detail="unknown item")
         return ear_progress.record(token, interval,
                                    correct=bool(body.get("correct")),
                                    first_listen=bool(body.get("first_listen")))
@@ -630,9 +631,12 @@ def build_app(ledger: Ledger | None = None, kite: KiteClient | None = None,
         """The canonical ladder. The client carries its own copy so it works
         offline; `tests/test_ear.py` fails if the two drift apart."""
         return {"lessons": [{"n": l.n, "title": l.title, "mode": l.mode,
+                             "group": l.group.value, "kind": l.kind.value,
                              "set": list(l.set)} for l in EAR_LESSONS],
                 "intervals": {i: {"semitones": s, "name": nm}
-                              for i, (s, nm) in EAR_INTERVALS.items()}}
+                              for i, (s, nm) in EAR_INTERVALS.items()},
+                "chords": {i: {"offsets": list(o), "name": nm}
+                           for i, (o, nm) in EAR_CHORDS.items()}}
 
     # Mounted last so the routes above win; html=True redirects /ear to /ear/.
     if ear_dir.is_dir():

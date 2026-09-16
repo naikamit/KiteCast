@@ -35,6 +35,7 @@ class EarService : Service() {
         fun onTransport(label: String)
         fun onLog(line: String)
         fun onLesson(lesson: Lesson)
+        fun onScores()
     }
 
     inner class LocalBinder : Binder() { val service: EarService get() = this@EarService }
@@ -63,6 +64,8 @@ class EarService : Service() {
     private var correct = 0
     private var firstHearing = 0
     private val session = HashMap<String, Pair<Int, Int>>()   // seen, correct
+    /** Live per-lesson tally, shown in the menu and cleared only by Reset. */
+    val perLesson = HashMap<Int, Pair<Int, Int>>()            // right, wrong
 
     private val logLines = ArrayList<String>()
     private val startedAt = System.currentTimeMillis()
@@ -205,6 +208,15 @@ class EarService : Service() {
         armSilence()
     }
 
+    /** Wipe the score and keep going. The questions never run out. */
+    fun resetScore() {
+        seen = 0; correct = 0; firstHearing = 0
+        session.clear(); perLesson.clear()
+        pushTally()
+        observer?.onScores()
+        log("mic", "score reset")
+    }
+
     fun skipQuestion() {
         if (!running || paused) return
         if (phase == Phase.LISTENING || phase == Phase.CONFIRMING) resolve(null)
@@ -245,7 +257,7 @@ class EarService : Service() {
                 current = q
                 val ms = play(q)
                 delay(ms + 150L)
-                val name = INTERVALS.getValue(q.id).display
+                val name = displayOf(q.id)
                 status(name, TONE_PLAIN)
                 awaitSpeech(name)
                 delay(500)
@@ -253,11 +265,12 @@ class EarService : Service() {
         }
     }
 
+    /** Generated fresh every time: a new item, a new root, a new instrument. */
     private fun nextQuestion(): Question {
         val id = weightedPick()
-        val semis = INTERVALS.getValue(id).semitones
+        val span = offsetsOf(id).max()
         var root: Int
-        do { root = 50 + Random.nextInt(84 - semis - 50 + 1) } while (root == lastRoot)
+        do { root = 50 + Random.nextInt(84 - span - 50 + 1) } while (root == lastRoot)
         lastRoot = root
         return Question(id, root, Synth.Voice.values().random(),
             lesson.mode == Mode.MELODIC && Random.nextBoolean())
@@ -284,7 +297,7 @@ class EarService : Service() {
         log("play", q.voice.label + " · " +
             (if (lesson.mode == Mode.MELODIC) (if (q.descending) "descending" else "ascending") else "harmonic") +
             if (q.replays > 0) " · replay ${q.replays}" else "")
-        val buf = Synth.renderQuestion(q.voice, q.root, INTERVALS.getValue(q.id).semitones,
+        val buf = Synth.renderQuestion(q.voice, q.root, offsetsOf(q.id),
             lesson.mode == Mode.MELODIC, q.descending)
         player.play(buf)
     }
@@ -347,9 +360,9 @@ class EarService : Service() {
         silence?.cancel()
         phase = Phase.CONFIRMING
         pending = a.options
-        val quality = INTERVALS.getValue(a.options[0]).quality
-        status("was it $quality?", TONE_PLAIN)
-        say("Was it $quality?") {
+        val word = confirmWord(a.options[0])
+        status("was it $word?", TONE_PLAIN)
+        say("Was it $word?") {
             scope.launch { delay(12000); if (phase == Phase.CONFIRMING) { phase = Phase.LISTENING; armSilence() } }
         }
     }
@@ -359,8 +372,13 @@ class EarService : Service() {
         silence?.cancel()
         phase = Phase.FEEDBACK
         val q = current ?: return
-        val truth = INTERVALS.getValue(q.id)
+        val truthName = displayOf(q.id)
         val right = id == q.id
+
+        val tally = perLesson[lesson.n] ?: Pair(0, 0)
+        perLesson[lesson.n] = if (right) Pair(tally.first + 1, tally.second)
+                              else Pair(tally.first, tally.second + 1)
+        observer?.onScores()
 
         seen++
         if (right) { correct++; if (q.replays == 0) firstHearing++ }
@@ -368,21 +386,21 @@ class EarService : Service() {
         session[q.id] = Pair(prior.first + 1, prior.second + if (right) 1 else 0)
         pushTally()
         log(if (right) "ok" else "bad",
-            truth.display + (if (id != null && !right) " — you said ${INTERVALS.getValue(id).display}" else "") +
+            truthName + (if (id != null && !right) " — you said ${displayOf(id)}" else "") +
             "  " + lag())
         scope.launch { progress.record(q.id, right, right && q.replays == 0) }
 
         scope.launch {
             if (right) {
-                status(truth.display, TONE_OK)
+                status(truthName, TONE_OK)
                 player.play(Synth.chime())
                 delay(1150)
             } else {
                 player.stop()
-                status(truth.display, TONE_BAD)
+                status(truthName, TONE_BAD)
                 // Just the answer. The colour already says you missed it, and
                 // being told so twenty times in a row is wearing.
-                awaitSpeech(truth.display)
+                awaitSpeech(truthName)
                 delay(120)
                 val ms = play(q)
                 delay(ms + 550L)

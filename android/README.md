@@ -24,6 +24,16 @@ comes back as out-of-grammar and is ignored rather than scored.
 up to five times, and then the session pauses — silence usually means you did
 not hear it, or that the phone is in a pocket.
 
+**Chords as well as intervals.** The same exercise with more notes: offsets
+above a root, played as a block. Naming a chord quality is the same act of
+recall as naming an interval, so they share the drill, the scoring and the
+mastery store. The menu is two levels — Harmonic, Melodic, Chords, then the
+lessons inside each, with a live tally beside every one.
+
+**The questions never run out.** Each is generated on the spot: a fresh item
+weighted towards what you miss, a root that never repeats twice running, and an
+instrument picked at random. Reset clears the tally and keeps going.
+
 **Four voices**, one of them a reed: piano, classical guitar, acoustic guitar
 and alto sax. The sax sustains where the others decay, so a harmonic interval
 holds for as long as it is played. The instrument and the direction are logged

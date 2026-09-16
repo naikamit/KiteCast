@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 
 from kitecast.app import build_app
 from kitecast.config import settings as app_settings
-from kitecast.ear import ALL, INTERVALS, LESSONS, Progress, lesson, safe_learner
+from kitecast.ear import (ALL, ALL_CHORDS, CHORDS, INTERVALS, LESSONS, Group, Kind,
+                          Progress, every_item, lesson, safe_learner)
 
 EAR_DIR = Path(__file__).resolve().parent.parent / "ear"
 
@@ -33,18 +34,40 @@ def ear_client(ledger, kite, telegram, settings, monkeypatch):
 
 # ------------------------------------------------------------------ the model
 
-def test_every_lesson_only_names_real_intervals():
+def test_every_lesson_is_playable():
+    """What each lesson names is checked by kind further down; this is the
+    shape of the lesson itself."""
     for l in LESSONS:
         assert l.set, l.title
         assert l.mode in ("harmonic", "melodic")
-        for i in l.set:
-            assert i in INTERVALS, (l.title, i)
+        assert len(set(l.set)) == len(l.set), l.title
 
 
-def test_the_ladder_covers_every_interval():
+def test_the_ladder_covers_everything_it_teaches():
     assert set(ALL) == set(INTERVALS)
-    assert set().union(*(set(l.set) for l in LESSONS)) == set(INTERVALS)
-    assert [l.n for l in LESSONS] == list(range(1, 14))
+    assert set(ALL_CHORDS) == set(CHORDS)
+    assert set().union(*(set(l.set) for l in LESSONS)) == set(every_item())
+    assert [l.n for l in LESSONS] == list(range(1, len(LESSONS) + 1))
+
+
+def test_every_group_has_lessons_and_every_lesson_a_group():
+    """The menu promises three categories, so all three must have content."""
+    for g in Group:
+        assert [l for l in LESSONS if l.group == g], g
+
+
+def test_chord_lessons_hold_chords_and_interval_lessons_intervals():
+    for l in LESSONS:
+        source = CHORDS if l.kind == Kind.CHORD else INTERVALS
+        for i in l.set:
+            assert i in source, (l.title, i)
+
+
+def test_chords_are_offsets_above_a_root():
+    for cid, (offsets, _) in CHORDS.items():
+        assert len(offsets) >= 2, cid
+        assert list(offsets) == sorted(offsets), cid
+        assert offsets[0] > 0, cid
 
 
 def test_semitones_are_distinct_and_ordered():
@@ -53,7 +76,9 @@ def test_semitones_are_distinct_and_ordered():
 
 
 def test_lesson_lookup():
-    assert lesson(5).title == "Harmonic: Fourths and Fifths"
+    assert lesson(3).title == "Fourths and Fifths"
+    assert lesson(3).group == Group.HARMONIC
+    assert lesson(14).kind == Kind.CHORD
     assert lesson(99) is None
 
 
@@ -177,9 +202,11 @@ def test_reset_empties_the_tally(client):
 
 def test_lessons_endpoint_publishes_the_ladder(client):
     body = client.get("/ear/api/lessons").json()
-    assert len(body["lessons"]) == 13
-    assert body["lessons"][4]["title"] == "Harmonic: Fourths and Fifths"
+    assert len(body["lessons"]) == len(LESSONS)
+    assert body["lessons"][2]["title"] == "Fourths and Fifths"
+    assert body["lessons"][2]["group"] == "harmonic"
     assert body["intervals"]["TT"]["semitones"] == 6
+    assert body["chords"]["dim7"]["offsets"] == [3, 6, 9]
 
 
 # ------------------------------------------------------- client/server drift
@@ -212,8 +239,17 @@ def test_the_browser_copy_of_the_interval_table_matches():
     assert _js_intervals() == {i: (s, n) for i, (s, n) in INTERVALS.items()}
 
 
-def test_the_browser_copy_of_the_ladder_matches():
-    assert _js_lessons() == [(l.n, l.title, l.mode, list(l.set)) for l in LESSONS]
+def test_the_browser_ladder_is_intervals_and_covers_them_all():
+    """The web app is intervals-only and organises its lessons flatly, so its
+    ladder is its own. What may never drift is the interval table above."""
+    js = _js_lessons()
+    named = set()
+    for _, _, mode, ids in js:
+        assert mode in ("harmonic", "melodic")
+        for i in ids:
+            assert i in INTERVALS, i
+            named.add(i)
+    assert named == set(INTERVALS)
 
 
 # ---------------------------------------------------------- the ear domain
@@ -421,10 +457,12 @@ def _kotlin_lessons():
     block = src[src.index("val LESSONS"):src.index("fun lessonOf")]
     out = []
     for m in re.finditer(
-            r'Lesson\((\d+), "([^"]+)", Mode\.(\w+), (ALL|listOf\([^)]*\))\)', block):
+            r'Lesson\((\d+), "([^"]+)", Mode\.(\w+), (ALL|listOf\([^)]*\)), '
+            r'Group\.(\w+), Kind\.(\w+)\)', block):
         raw = m.group(4)
-        names = list(_kotlin_intervals()) if raw == "ALL" else re.findall(r'"(\w+)"', raw)
-        out.append((int(m.group(1)), m.group(2), m.group(3).lower(), names))
+        names = list(_kotlin_intervals()) if raw == "ALL" else re.findall(r'"([\w]+)"', raw)
+        out.append((int(m.group(1)), m.group(2), m.group(3).lower(), names,
+                    m.group(5).lower(), m.group(6).lower()))
     return out
 
 
@@ -433,7 +471,17 @@ def test_the_kotlin_interval_table_matches():
 
 
 def test_the_kotlin_ladder_matches():
-    assert _kotlin_lessons() == [(l.n, l.title, l.mode, list(l.set)) for l in LESSONS]
+    assert _kotlin_lessons() == [
+        (l.n, l.title, l.mode, list(l.set), l.group.value, l.kind.value) for l in LESSONS]
+
+
+def test_the_kotlin_chord_table_matches():
+    src = (ANDROID_SRC / "Intervals.kt").read_text()
+    block = src[src.index("val CHORDS"):src.index("val ALL_CHORDS")]
+    found = {}
+    for m in re.finditer(r'"(\w+)" to Chord\(listOf\(([\d, ]+)\), "([^"]+)"\)', block):
+        found[m.group(1)] = (tuple(int(x) for x in m.group(2).split(",")), m.group(3))
+    assert found == {c: (tuple(o), nm) for c, (o, nm) in CHORDS.items()}
 
 
 def test_the_kotlin_synth_carries_the_measured_constants():
