@@ -475,3 +475,47 @@ def test_the_drill_waits_for_the_recogniser():
     app = (ANDROID_SRC / "EarService.kt").read_text()
     assert "startPending" in app
     assert "if (!modelReady)" in app
+
+
+def test_the_voice_only_answers():
+    """Controls are buttons. The recogniser no longer has to tell an answer
+    from an instruction, and a stray word cannot trigger one."""
+    src = (ANDROID_SRC / "Intervals.kt").read_text()
+    assert "enum class Command" not in src
+    assert "findJump" not in src
+    grammar = src[src.index("fun voskGrammar()"):]
+    for word in ('"repeat"', '"skip"', '"pause"', '"stop"', '"lesson"'):
+        assert word not in grammar, word
+
+
+def test_the_controls_exist_as_buttons():
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert "fun repeatQuestion()" in app
+    assert "fun skipQuestion()" in app
+
+
+def test_silence_repeats_rather_than_scoring_a_miss():
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert "const val MAX_REPEATS = 5" in app
+    assert "if (q.replays >= MAX_REPEATS)" in app
+
+
+def test_a_wrong_answer_is_not_told_off():
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert "Not quite" not in app
+
+
+def test_the_instrument_and_direction_are_never_shown():
+    """On a melodic lesson, "ascending" is half the answer."""
+    assert "fun onSource" not in (ANDROID_SRC / "EarService.kt").read_text()
+    layout = (EAR_DIR.parent / "android/app/src/main/res/layout/activity_main.xml").read_text()
+    assert "@+id/source" not in layout
+
+
+def test_the_alto_sax_is_a_sustaining_voice():
+    """A reed holds where a struck or plucked string decays, so a harmonic
+    interval lasts as long as it is played."""
+    synth = (ANDROID_SRC / "Synth.kt").read_text()
+    assert "SAX(" in synth
+    assert "fun renderSax" in synth
+    assert "saxEnvelope" in synth

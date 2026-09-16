@@ -31,7 +31,6 @@ class EarService : Service() {
     interface Observer {
         fun onStatus(text: String, tone: Int)
         fun onHeard(text: String)
-        fun onSource(text: String)
         fun onTally(text: String)
         fun onTransport(label: String)
         fun onLog(line: String)
@@ -195,6 +194,22 @@ class EarService : Service() {
         stopSelf()
     }
 
+    /** Play the current question again. A button now, not a spoken word. */
+    fun repeatQuestion() {
+        if (!running || paused) return
+        if (phase != Phase.LISTENING && phase != Phase.CONFIRMING) return
+        current?.let { q ->
+            q.replays++
+            scope.launch { play(q); phase = Phase.LISTENING }
+        }
+        armSilence()
+    }
+
+    fun skipQuestion() {
+        if (!running || paused) return
+        if (phase == Phase.LISTENING || phase == Phase.CONFIRMING) resolve(null)
+    }
+
     fun setLesson(next: Lesson) {
         if (next.n == lesson.n) return
         lesson = next
@@ -264,24 +279,37 @@ class EarService : Service() {
 
     private suspend fun play(q: Question): Int = withContext(Dispatchers.Default) {
         phase = Phase.PLAYING
-        val label = q.voice.label + " · " + (if (lesson.mode == Mode.MELODIC)
-            (if (q.descending) "descending" else "ascending") else "harmonic")
-        observer?.onSource(label)
-        log("play", label + if (q.replays > 0) " · replay ${q.replays}" else "")
+        // Logged but never shown: on a melodic lesson "ascending" is the
+        // answer's other half.
+        log("play", q.voice.label + " · " +
+            (if (lesson.mode == Mode.MELODIC) (if (q.descending) "descending" else "ascending") else "harmonic") +
+            if (q.replays > 0) " · replay ${q.replays}" else "")
         val buf = Synth.renderQuestion(q.voice, q.root, INTERVALS.getValue(q.id).semitones,
             lesson.mode == Mode.MELODIC, q.descending)
         player.play(buf)
     }
 
+    /**
+     * Nobody spoke. Play it again rather than marking it wrong — silence
+     * usually means you did not hear it, not that you do not know. After
+     * enough of those the phone is probably in a pocket, so stop asking.
+     */
     private fun armSilence() {
         silence?.cancel()
         silence = scope.launch {
-            delay(16000)
-            if (phase != Phase.LISTENING || paused) return@launch
-            current?.let { it.replays++; play(it) }
-            phase = Phase.LISTENING
-            delay(20000)
-            if (phase == Phase.LISTENING && !paused) resolve(null, timedOut = true)
+            while (running && !paused) {
+                delay(ANSWER_WINDOW)
+                if (phase != Phase.LISTENING || paused) return@launch
+                val q = current ?: return@launch
+                if (q.replays >= MAX_REPEATS) {
+                    log("mic", "no answer after $MAX_REPEATS repeats — pausing")
+                    pause()
+                    return@launch
+                }
+                q.replays++
+                play(q)
+                phase = Phase.LISTENING
+            }
         }
     }
 
@@ -302,17 +330,16 @@ class EarService : Service() {
             return
         }
 
-        val heard = interpret(listOf(text), lesson) ?: return
-        if (!isFinal && heard !is Heard.Answer) return       // only answers go early
-
-        when (heard) {
-            is Heard.Cmd -> command(heard.command)
-            is Heard.Jump -> setLesson(heard.lesson)
-            is Heard.Answer -> if (phase == Phase.LISTENING) {
+        if (phase != Phase.LISTENING) return
+        when (val heard = interpret(listOf(text), lesson)) {
+            is Heard.Answer -> {
                 log("hear", (if (isFinal) "final " else "interim ") + lag() + " \"$text\"")
                 resolve(heard.id)
             }
-            is Heard.Ambiguous -> if (phase == Phase.LISTENING) confirm(heard)
+            // Only a clean answer is taken early; a question back waits for the
+            // recogniser to finish making up its mind.
+            is Heard.Ambiguous -> if (isFinal) confirm(heard)
+            null -> Unit
         }
     }
 
@@ -327,7 +354,7 @@ class EarService : Service() {
         }
     }
 
-    private fun resolve(id: String?, timedOut: Boolean = false) {
+    private fun resolve(id: String?) {
         if (phase == Phase.FEEDBACK) return
         silence?.cancel()
         phase = Phase.FEEDBACK
@@ -342,7 +369,7 @@ class EarService : Service() {
         pushTally()
         log(if (right) "ok" else "bad",
             truth.display + (if (id != null && !right) " — you said ${INTERVALS.getValue(id).display}" else "") +
-            (if (timedOut) " — timed out" else "") + "  " + lag())
+            "  " + lag())
         scope.launch { progress.record(q.id, right, right && q.replays == 0) }
 
         scope.launch {
@@ -353,40 +380,14 @@ class EarService : Service() {
             } else {
                 player.stop()
                 status(truth.display, TONE_BAD)
-                awaitSpeech("Not quite. ${truth.display}.")
+                // Just the answer. The colour already says you missed it, and
+                // being told so twenty times in a row is wearing.
+                awaitSpeech(truth.display)
                 delay(120)
                 val ms = play(q)
                 delay(ms + 550L)
             }
             if (running && !paused && !listenMode) ask()
-        }
-    }
-
-    private fun command(c: Command) {
-        when (c) {
-            Command.REPEAT -> if (phase == Phase.LISTENING || phase == Phase.CONFIRMING) {
-                current?.let { it.replays++; scope.launch { play(it) } }
-                phase = Phase.LISTENING; armSilence()
-            }
-            Command.SKIP -> if (phase == Phase.LISTENING || phase == Phase.CONFIRMING) resolve(null)
-            Command.SCORE -> say(
-                if (seen == 0) "Nothing scored yet."
-                else "$correct of $seen. That's ${pct(correct, seen)} percent, " +
-                     "and ${pct(firstHearing, seen)} percent on first hearing.") {
-                if (running && !paused && !listenMode) ask()
-            }
-            Command.PAUSE -> pause()
-            Command.RESUME -> resume()
-            Command.STOP -> stopSession()
-            Command.HELP -> say("Just name what you hear. You can also say repeat, skip, score, or pause.") {}
-            Command.LISTEN -> if (!listenMode) {
-                listenMode = true; player.stop(); loop?.cancel()
-                say("Just listening.") { listenLoop() }
-            }
-            Command.DRILL -> if (listenMode) {
-                listenMode = false; player.stop(); loop?.cancel()
-                say("Back to it.") { ask() }
-            }
         }
     }
 
@@ -511,5 +512,8 @@ class EarService : Service() {
         const val TONE_PLAIN = 0
         const val TONE_OK = 1
         const val TONE_BAD = 2
+        /** How long to wait for a spoken answer before playing it again. */
+        const val ANSWER_WINDOW = 12000L
+        const val MAX_REPEATS = 5
     }
 }

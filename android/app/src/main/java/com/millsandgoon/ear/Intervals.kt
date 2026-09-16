@@ -105,45 +105,20 @@ private fun findInterval(norm: String, set: List<String>): String? {
 private fun findSize(norm: String): Int? =
     SIZE_WORDS.entries.firstOrNull { wordMatch(norm, it.key) }?.value
 
-enum class Command { REPEAT, SKIP, SCORE, STOP, HELP, LISTEN, DRILL, PAUSE, RESUME }
-
-private val COMMANDS = listOf(
-    Command.REPEAT to Regex("(^| )(repeat|replay|again|once more)($| )"),
-    Command.SKIP to Regex("(^| )(skip|pass|next|dont know|do not know|no idea)($| )"),
-    Command.SCORE to Regex("(^| )(score|how am i doing|my score|progress)($| )"),
-    Command.PAUSE to Regex("(^| )(pause|hold on)($| )"),
-    Command.RESUME to Regex("(^| )(resume|continue|carry on|unpause)($| )"),
-    Command.STOP to Regex("(^| )(stop|quit|exit|end session|finish)($| )"),
-    Command.HELP to Regex("(^| )(help|what can i say|commands)($| )"),
-    Command.LISTEN to Regex("(^| )(listen mode|listen|teach me|demo)($| )"),
-    Command.DRILL to Regex("(^| )(drill|practice|quiz me|test me)($| )")
-)
-
 private val YES = Regex("(^| )(yes|yeah|yep|yup|correct|right|affirmative)($| )")
 private val NO = Regex("(^| )(no|nope|nah|negative|wrong)($| )")
 
+/**
+ * Your voice answers the question and does nothing else. Controls are buttons.
+ *
+ * That is a narrower job than the web app gave it, and a better one: the
+ * recogniser no longer has to tell an answer from an instruction, an
+ * instruction can no longer be triggered by a stray word, and the grammar
+ * shrinks to the twelve things being taught.
+ */
 sealed class Heard {
     data class Answer(val id: String) : Heard()
     data class Ambiguous(val size: Int, val options: List<String>) : Heard()
-    data class Cmd(val command: Command) : Heard()
-    data class Jump(val lesson: Lesson) : Heard()
-}
-
-private fun findJump(norm: String): Lesson? {
-    Regex("(^| )lesson (\\d+)($| )").find(norm)?.let { return lessonOf(it.groupValues[2].toInt()) }
-    val words = mapOf("one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5, "six" to 6,
-        "seven" to 7, "eight" to 8, "nine" to 9, "ten" to 10, "eleven" to 11, "twelve" to 12,
-        "thirteen" to 13)
-    Regex("(^| )lesson (\\w+)($| )").find(norm)?.let { m ->
-        words[m.groupValues[2]]?.let { return lessonOf(it) }
-    }
-    val harmonic = wordMatch(norm, "harmonic")
-    val melodic = wordMatch(norm, "melodic")
-    if (!harmonic && !melodic) return null
-    val mode = if (harmonic) Mode.HARMONIC else Mode.MELODIC
-    if (wordMatch(norm, "all")) return LESSONS.firstOrNull { it.mode == mode && it.set.size == ALL.size }
-    val size = findSize(norm) ?: return null
-    return LESSONS.firstOrNull { it.mode == mode && it.set.any { id -> INTERVALS.getValue(id).size == size } }
 }
 
 /**
@@ -154,10 +129,6 @@ private fun findJump(norm: String): Lesson? {
 fun interpret(alternatives: List<String>, lesson: Lesson): Heard? {
     val norms = alternatives.map { normalise(it) }.filter { it.isNotEmpty() }
     if (norms.isEmpty()) return null
-
-    for (n in norms) COMMANDS.firstOrNull { it.second.containsMatchIn(" $n ") }
-        ?.let { return Heard.Cmd(it.first) }
-    for (n in norms) findJump(n)?.let { return Heard.Jump(it) }
 
     val hits = norms.mapNotNull { findInterval(it, lesson.set) }.distinct()
     if (hits.size > 1 && hits.map { INTERVALS.getValue(it).size }.distinct().size == 1) {
@@ -194,10 +165,7 @@ fun voskGrammar(): String {
     val phrases = LinkedHashSet<String>()
     ALIASES.values.forEach { phrases.addAll(it) }
     phrases.addAll(SIZE_WORDS.keys)
-    phrases.addAll(listOf("yes", "no", "yeah", "nope", "repeat", "skip", "next", "score",
-        "pause", "resume", "stop", "help", "listen", "drill", "again",
-        "harmonic", "melodic", "all", "lesson",
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-        "ten", "eleven", "twelve", "thirteen"))
+    // yes/no only, for the one question the app ever asks back
+    phrases.addAll(listOf("yes", "no", "yeah", "nope"))
     return phrases.joinToString(prefix = "[", postfix = ", \"[unk]\"]") { "\"$it\"" }
 }
