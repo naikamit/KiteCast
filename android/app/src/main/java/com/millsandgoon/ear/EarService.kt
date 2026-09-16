@@ -59,12 +59,19 @@ class EarService : Service() {
     private var listenSince = 0L
     private var speaking = false
 
-    private var seen = 0
-    private var correct = 0
-    private var firstHearing = 0
     private val session = HashMap<String, Pair<Int, Int>>()   // seen, correct
-    /** Live per-lesson tally, shown in the menu and cleared only by Reset. */
+
+    /**
+     * The score is per exercise, everywhere it appears. Fifths answered right
+     * say nothing about your sevenths, so one running total across a sitting
+     * was a number that meant nothing — and it read as a second, different
+     * score next to the per-exercise ones in the menu.
+     */
     val perLesson = HashMap<Int, Pair<Int, Int>>()            // right, wrong
+
+    private val hits get() = (perLesson[lesson.n] ?: Pair(0, 0)).first
+    private val misses get() = (perLesson[lesson.n] ?: Pair(0, 0)).second
+    private val asked get() = hits + misses
 
     private val logLines = ArrayList<String>()
     private val startedAt = System.currentTimeMillis()
@@ -170,7 +177,7 @@ class EarService : Service() {
         player.stop(); speaker.stop()
         listener.setPaused(true)              // pause stops listening too
         log("mic", "paused — microphone off")
-        status("paused", TONE_PLAIN)
+        status("", TONE_PLAIN)             // the play icon is the whole message
         pushTransport(); notifyBar()
     }
 
@@ -189,26 +196,42 @@ class EarService : Service() {
         player.stop(); speaker.stop()
         listener.setPaused(true)
         log("mic", "session stopped")
-        if (seen > 0) say("That's $correct of $seen. ${pct(correct, seen)} percent.") {}
-        status("stopped", TONE_PLAIN)
+        if (asked > 0) say("That's $hits of $asked. ${pct(hits, asked)} percent.") {}
+        status("", TONE_PLAIN)
         pushTransport(); notifyBar()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    /** Wipe the score and keep going. The questions never run out. */
+    /**
+     * Wipe this exercise's score and keep going. The questions never run out,
+     * and the other exercises keep the scores you earned in them.
+     */
     fun resetScore() {
-        seen = 0; correct = 0; firstHearing = 0
-        session.clear(); perLesson.clear()
+        perLesson.remove(lesson.n)
+        lesson.set.forEach { session.remove(it) }
         pushTally()
         observer?.onScores()
-        log("mic", "score reset")
+        log("mic", "score reset — ${lesson.title}")
+    }
+
+    /**
+     * A tap is an answer like any other: same scoring, same feedback. Speech
+     * is still the point, but a recogniser that mishears you twice running
+     * should not be the only way past the question.
+     */
+    fun tapAnswer(id: String) {
+        if (!running || paused) return
+        if (phase != Phase.LISTENING && phase != Phase.CONFIRMING) return
+        log("tap", displayOf(id))
+        resolve(id)
     }
 
     fun setLesson(next: Lesson) {
         if (next.n == lesson.n) return
         lesson = next
         observer?.onLesson(next)
+        pushTally()                        // each exercise carries its own score
         log("mic", "lesson ${next.n}")
         if (running && !paused) { player.stop(); loop?.cancel(); ask() }
     }
@@ -361,8 +384,6 @@ class EarService : Service() {
                               else Pair(tally.first, tally.second + 1)
         observer?.onScores()
 
-        seen++
-        if (right) { correct++; if (q.replays == 0) firstHearing++ }
         val prior = session[q.id] ?: Pair(0, 0)
         session[q.id] = Pair(prior.first + 1, prior.second + if (right) 1 else 0)
         pushTally()
@@ -444,8 +465,8 @@ class EarService : Service() {
             Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(if (paused) "Paused" else lesson.title)
-            .setContentText(if (seen == 0) "Say the interval" else "$correct of $seen")
+            .setContentTitle(lesson.title)
+            .setContentText(if (asked == 0) "Say the interval" else "$hits of $asked")
             .setContentIntent(open)
             .setOngoing(true)
             .setSilent(true)
@@ -473,8 +494,8 @@ class EarService : Service() {
 
     private fun pushTally() {
         observer?.onTally(
-            if (seen == 0) "" else "$correct \u2713",
-            if (seen == 0) "" else "${seen - correct} \u2717")
+            if (asked == 0) "" else "$hits \u2713",
+            if (asked == 0) "" else "$misses \u2717")
         notifyBar()
     }
 

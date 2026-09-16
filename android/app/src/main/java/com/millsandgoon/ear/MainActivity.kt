@@ -121,9 +121,17 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
         service?.setLesson(lesson)
     }
 
+    /** The vocabulary is also the keypad: every answer you may say is a key. */
     private fun showLesson(lesson: Lesson) {
         ui.lessonTitle.text = "${lesson.group.label} · ${lesson.title}"
-        ui.vocab.text = lesson.set.joinToString("   ·   ") { displayOf(it) }
+        ui.vocab.removeAllViews()
+        for (id in lesson.set) {
+            val key = LayoutInflater.from(this)
+                .inflate(R.layout.item_answer, ui.vocab, false) as TextView
+            key.text = displayOf(id)
+            key.setOnClickListener { service?.tapAnswer(id) }
+            ui.vocab.addView(key)
+        }
     }
 
     private fun requestThenStart() {

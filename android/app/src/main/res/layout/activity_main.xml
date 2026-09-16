@@ -65,7 +65,7 @@
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_marginEnd="12dp"
-                        android:contentDescription="Speak the answer"
+                        android:contentDescription="Speak or tap the answer"
                         android:src="@drawable/ic_speak" />
 
                     <TextView
@@ -74,17 +74,17 @@
                         android:textColor="@color/aqua"
                         android:textSize="13sp"
                         android:letterSpacing="0.14"
-                        android:text="SPEAK THE ANSWER" />
+                        android:text="SPEAK / TAP THE ANSWER" />
                 </LinearLayout>
 
-                <TextView
+                <!-- Every answer is also a button. Speech is the point, but a
+                     recogniser that will not hear you must not be the only
+                     way through the question. -->
+                <com.millsandgoon.ear.FlowLayout
                     android:id="@+id/vocab"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:textColor="@color/ink"
-                    android:textSize="22sp"
-                    android:lineSpacingExtra="8dp" />
+                    android:layout_marginTop="16dp" />
 
                 <!-- the answer lands here, where you were already looking -->
                 <TextView
