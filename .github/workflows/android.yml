@@ -39,7 +39,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: android/app/src/main/assets/model-en-us
-          key: vosk-model-small-en-us-0.15
+          # Bump when anything about how the model is prepared changes —
+          # a stale cache hit skips the fetch step entirely, so the uuid
+          # marker written there would never appear.
+          key: vosk-model-small-en-us-0.15-uuid
 
       - name: Fetch the speech model
         if: steps.model.outputs.cache-hit != 'true'
