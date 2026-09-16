@@ -93,7 +93,7 @@ jobs:
           echo
           echo "=== ten largest files (compressed) ==="
           unzip -v "$APK" | awk 'NF>=8 && $1 ~ /^[0-9]+$/ {printf "%8.1f MB  %s\n", $3/1048576, $8}' \
-            | sort -rn | head -10
+            | sort -rn | head -10 || true
 
       - uses: actions/upload-artifact@v4
         if: success()
