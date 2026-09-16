@@ -56,9 +56,9 @@ ALL_CHORDS = list(CHORDS)
 
 
 class Group(str, Enum):
-    """The top level of the menu: what kind of thing you are naming."""
-    HARMONIC = "harmonic"
+    """The top level of the menu, in the order it is shown."""
     MELODIC = "melodic"
+    HARMONIC = "harmonic"
     CHORDS = "chords"
 
 

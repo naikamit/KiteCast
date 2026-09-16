@@ -30,7 +30,6 @@ class EarService : Service() {
 
     interface Observer {
         fun onStatus(text: String, tone: Int)
-        fun onHeard(text: String)
         fun onTally(text: String)
         fun onTransport(label: String)
         fun onLog(line: String)
@@ -242,7 +241,6 @@ class EarService : Service() {
             play(q)
             phase = Phase.LISTENING
             listenSince = System.currentTimeMillis()
-            status("listening", TONE_PLAIN)
             log("mic", "awaiting answer")
             armSilence()
         }
@@ -292,6 +290,7 @@ class EarService : Service() {
 
     private suspend fun play(q: Question): Int = withContext(Dispatchers.Default) {
         phase = Phase.PLAYING
+        status("", TONE_PLAIN)
         // Logged but never shown: on a melodic lesson "ascending" is the
         // answer's other half.
         log("play", q.voice.label + " · " +
@@ -330,8 +329,6 @@ class EarService : Service() {
 
     private fun onHeard(text: String, isFinal: Boolean) {
         if (!running || paused || speaking) return
-        observer?.onHeard(text)
-
         if (phase == Phase.CONFIRMING) {
             if (!isFinal) return
             val yn = interpretYesNo(listOf(text))
@@ -492,8 +489,7 @@ class EarService : Service() {
 
     private fun pushTally() {
         observer?.onTally(
-            if (seen == 0) "not started"
-            else "$correct of $seen  ·  ${pct(correct, seen)}%  ·  ${pct(firstHearing, seen)}% on first hearing")
+            if (seen == 0) "" else "$correct \u2713    ${seen - correct} \u2717")
         notifyBar()
     }
 

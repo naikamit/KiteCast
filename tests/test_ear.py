@@ -560,10 +560,59 @@ def test_the_instrument_and_direction_are_never_shown():
     assert "@+id/source" not in layout
 
 
-def test_the_alto_sax_is_a_sustaining_voice():
-    """A reed holds where a struck or plucked string decays, so a harmonic
-    interval lasts as long as it is played."""
+LAYOUT = (Path(__file__).resolve().parent.parent
+          / "android/app/src/main/res/layout/activity_main.xml")
+
+
+def test_three_voices_all_of_them_struck_or_plucked():
     synth = (ANDROID_SRC / "Synth.kt").read_text()
-    assert "SAX(" in synth
-    assert "fun renderSax" in synth
-    assert "saxEnvelope" in synth
+    assert "SAX" not in synth and "renderSax" not in synth
+    for v in ("PIANO(", "NYLON(", "STEEL("):
+        assert v in synth, v
+
+
+def test_the_menu_leads_with_melodic():
+    """Group order is the order the menu shows, so it lives in the enum."""
+    assert [g.value for g in Group] == ["melodic", "harmonic", "chords"]
+    kt = (ANDROID_SRC / "Intervals.kt").read_text()
+    order = re.search(r"enum class Group\(val label: String\) \{([^}]*)\}", kt).group(1)
+    assert order.index("MELODIC") < order.index("HARMONIC") < order.index("CHORDS")
+
+
+def test_nothing_narrates_the_microphone():
+    """No "listening" caption and no running transcript — neither tells you
+    anything you cannot hear, and both pull the eye to the screen."""
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert 'status("listening"' not in app
+    assert "fun onHeard(text: String)\n" not in app     # the Observer method
+    assert "@+id/heard" not in LAYOUT.read_text()
+
+
+def test_the_score_is_the_same_two_marks_everywhere():
+    """Ticks and crosses on the main page exactly as in the menu."""
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert "\\u2713" in app and "\\u2717" in app
+    assert "on first hearing" not in app
+    item = (LAYOUT.parent / "item_lesson.xml").read_text()
+    assert "scoreRight" in item and "scoreWrong" in item
+
+
+def test_the_page_is_ordered_for_a_thumb():
+    """Speak-the-answer, then start/reset, then the mid-question controls, then
+    the score. Buttons big enough to hit without looking."""
+    xml = LAYOUT.read_text()
+    order = [xml.index(f'@+id/{i}"') for i in
+             ("sayable", "transport", "reset", "again", "skip", "tally")]
+    assert order == sorted(order), "main page is out of order"
+    assert xml.count('android:layout_height="74dp"') == 2      # start and reset
+    assert xml.count('android:layout_height="62dp"') == 2      # again and skip
+
+
+def test_start_and_reset_are_the_same_shape():
+    """Same control, different consequence — so shape matches and only the
+    fill differs."""
+    d = LAYOUT.parent.parent / "drawable"
+    radius = re.compile(r'android:radius="(\d+)dp"')
+    a = radius.search((d / "bg_transport.xml").read_text()).group(1)
+    b = radius.search((d / "bg_reset.xml").read_text()).group(1)
+    assert a == b
