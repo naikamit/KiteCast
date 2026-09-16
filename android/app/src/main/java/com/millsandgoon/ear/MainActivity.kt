@@ -81,6 +81,9 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
             if (s == null || !s.running) requestThenStart() else s.toggle()
         }
 
+        ui.again.setOnClickListener { service?.repeatQuestion() }
+        ui.skip.setOnClickListener { service?.skipQuestion() }
+
         ui.log.setOnLongClickListener {
             val cb = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cb.setPrimaryClip(android.content.ClipData.newPlainText("ear log", service?.logText().orEmpty()))
@@ -161,7 +164,6 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
     }
 
     override fun onHeard(text: String) = runOnUiThread { ui.heard.text = text }
-    override fun onSource(text: String) = runOnUiThread { ui.source.text = text }
     override fun onTally(text: String) = runOnUiThread { ui.tally.text = text }
     override fun onTransport(label: String) = runOnUiThread { ui.transport.text = label }
 

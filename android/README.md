@@ -9,11 +9,25 @@ this exists.
 
 ## What is different from the web app
 
+**Your voice only ever answers the question.** Every control is a button.
+That is a narrower job than the web app gave it and a better one: the
+recogniser never has to tell an answer from an instruction, a stray word cannot
+trigger one, and the grammar shrinks to the twelve things being taught.
+
 **Recognition is offline and grammar-constrained.** Vosk is told the only
-things you could sensibly say — twelve interval names, their aliases, and the
-commands. It chooses between those, not between them and the whole English
-language, and never goes near a network. `[unk]` is in the grammar, so humming
-to find a note comes back as out-of-grammar and is ignored rather than scored.
+things you could sensibly say — twelve interval names and their aliases. It
+chooses between those, not between them and the whole English language, and
+never goes near a network. `[unk]` is in the grammar, so humming to find a note
+comes back as out-of-grammar and is ignored rather than scored.
+
+**Silence is not a wrong answer.** If nothing is said the question plays again,
+up to five times, and then the session pauses — silence usually means you did
+not hear it, or that the phone is in a pocket.
+
+**Four voices**, one of them a reed: piano, classical guitar, acoustic guitar
+and alto sax. The sax sustains where the others decay, so a harmonic interval
+holds for as long as it is played. The instrument and the direction are logged
+but never shown — on a melodic lesson, "ascending" is half the answer.
 
 **Most of the web app's session code is gone.** The self-echo gate, the restart
 churn, the reopen-gap backoff, the visibility juggling, the wake lock, the
