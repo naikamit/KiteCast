@@ -608,6 +608,43 @@ def test_the_score_is_the_same_two_marks_everywhere():
         assert f'android:textColor="{colour}"' in block, view
 
 
+def test_every_answer_is_also_a_key():
+    """Speech is the point, but a recogniser that mishears you twice running
+    must not be the only way past a question."""
+    xml = LAYOUT.read_text()
+    assert "SPEAK / TAP THE ANSWER" in xml
+    assert "com.millsandgoon.ear.FlowLayout" in xml
+    assert (LAYOUT.parent / "item_answer.xml").exists()
+
+    app = (ANDROID_SRC / "MainActivity.kt").read_text()
+    assert "R.layout.item_answer" in app
+    assert "service?.tapAnswer(id)" in app
+    assert "fun tapAnswer(id: String)" in (ANDROID_SRC / "EarService.kt").read_text()
+
+
+def test_the_score_belongs_to_the_exercise():
+    """One running total across a sitting meant nothing — fifths answered
+    right say nothing about your sevenths — and it read as a second, rival
+    score beside the per-exercise ones in the menu."""
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert "private var seen = 0" not in app
+    assert "private var correct = 0" not in app
+    assert "firstHearing" not in app
+
+    reset = app[app.index("fun resetScore()"):]
+    reset = reset[:reset.index("\n    }")]
+    assert "perLesson.remove(lesson.n)" in reset
+    assert "perLesson.clear()" not in reset, "reset must not empty the other exercises"
+
+
+def test_pausing_is_shown_by_the_button_alone():
+    """The icon already flipped. A word saying the same thing is one more
+    thing to read at a red light."""
+    app = (ANDROID_SRC / "EarService.kt").read_text()
+    assert 'status("paused"' not in app
+    assert '"Paused"' not in app
+
+
 def test_the_page_is_ordered_for_a_thumb():
     """Speak-the-answer, then the score with its reset, then play/pause at the
     bottom where the thumb already rests. Both buttons big enough to hit
