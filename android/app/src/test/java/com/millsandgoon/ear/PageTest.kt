@@ -160,6 +160,40 @@ class PageTest {
         assertFalse("https://" in progress)
     }
 
+    /**
+     * A Bluetooth headset is two devices pretending to be one: A2DP carries
+     * good audio and has no microphone, the microphone lives on the call
+     * channel, and the two cannot both be up. Taking half of each is what
+     * sounded broken — earbuds playing, phone in a pocket listening — so the
+     * headset takes the whole session or none of it.
+     */
+    @Test fun `a headset takes the tones and the microphone together`() {
+        val routing = src("Routing.kt")
+        assertTrue("setCommunicationDevice" in routing)     // Android 12 and up
+        assertTrue("startBluetoothSco" in routing)          // and everything older
+        assertTrue("MODE_IN_COMMUNICATION" in routing)
+        assertTrue("the route must be dropped again",
+            "clearCommunicationDevice" in routing && "stopBluetoothSco" in routing)
+
+        // Playback and prompts follow the microphone, or they are played to a
+        // profile Bluetooth has suspended.
+        assertTrue("USAGE_VOICE_COMMUNICATION" in src("Player.kt"))
+        assertTrue("USAGE_VOICE_COMMUNICATION" in src("Speaker.kt"))
+        assertTrue("viaHeadset" in service)
+        assertTrue("speaker.setVoiceRoute" in service)
+    }
+
+    /** The microphone is chosen when capture opens, so a recogniser that
+     *  started on the phone stays there however the earbuds are routed. */
+    @Test fun `the recogniser pins its microphone and follows a change`() {
+        val listener = src("Listener.kt")
+        assertTrue("setPreferredDevice" in listener)
+        assertTrue("VOICE_COMMUNICATION" in listener)
+        assertTrue("fun restart()" in listener)
+        assertTrue("listener.restart()" in service)
+        assertTrue("MODIFY_AUDIO_SETTINGS" in read("src/main/AndroidManifest.xml"))
+    }
+
     /** These numbers were measured, not chosen. A slip would quietly detune
      *  the whole app. */
     @Test fun `the synth carries the measured constants`() {

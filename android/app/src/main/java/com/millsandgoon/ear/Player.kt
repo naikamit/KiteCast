@@ -9,14 +9,24 @@ class Player {
 
     private var track: AudioTrack? = null
 
+    /**
+     * When the headset's microphone is in use its speaker is on the same
+     * narrowband channel, and media audio does not go there — it goes to a
+     * profile that Bluetooth has suspended. So the tones have to travel as
+     * call audio too, or they are played to nobody.
+     */
+    @Volatile var viaHeadset = false
+
     fun play(samples: FloatArray): Int {
         stop()
         if (samples.isEmpty()) return 0
         val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(if (viaHeadset) AudioAttributes.USAGE_VOICE_COMMUNICATION
+                              else AudioAttributes.USAGE_MEDIA)
+                    .setContentType(if (viaHeadset) AudioAttributes.CONTENT_TYPE_SPEECH
+                                    else AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build()
             )
             .setAudioFormat(

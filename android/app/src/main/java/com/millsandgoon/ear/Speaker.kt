@@ -1,6 +1,7 @@
 package com.millsandgoon.ear
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
@@ -47,6 +48,19 @@ class Speaker(context: Context, private val onReady: () -> Unit) {
         val id = "u${counter++}"
         synchronized(done) { done[id] = whenDone }
         engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+    }
+
+    /** Send the prompts down the call channel with everything else, so the
+     *  headset hears them rather than the phone's own speaker. */
+    fun setVoiceRoute(on: Boolean) {
+        try {
+            tts?.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(if (on) AudioAttributes.USAGE_VOICE_COMMUNICATION
+                              else AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build())
+        } catch (_: Exception) {}
     }
 
     fun stop() { try { tts?.stop() } catch (_: Exception) {} }
