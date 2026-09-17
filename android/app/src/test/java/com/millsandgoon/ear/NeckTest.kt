@@ -37,37 +37,73 @@ class NeckTest {
     }
 
     /**
-     * The whole point: every question the drill can generate must be drawable,
-     * every note of it, on its own string and at the fret that really sounds
-     * it. The root range in EarService is bounded by the neck for this reason.
+     * The whole point: every question the drill can generate must be drawn as
+     * the notes it really is, on frets that really sound them. The root range
+     * in EarService is bounded by the neck for exactly this reason.
      */
-    @Test fun `every question the drill can ask has a shape`() {
+    @Test fun `every question the drill can ask is drawn as the right notes`() {
         var checked = 0
-        for (lesson in LESSONS) {
-            for (id in lesson.set) {
-                val offsets = offsetsOf(id)
-                val span = offsets.max()
-                for (root in 50..(Neck.HIGHEST - span)) {
-                    val midis = listOf(root) + offsets.map { root + it }
-                    val shape = Neck.shapeOf(midis)
-
-                    assertEquals("$id at $root lost a note", midis.size, shape.size)
-                    assertEquals("$id at $root is drawn as the wrong notes",
-                        midis.sorted(), shape.map { Neck.midiAt(it.string, it.fret) })
-                    assertEquals("$id at $root doubles up a string",
-                        shape.size, shape.map { it.string }.toSet().size)
-                    checked++
-                }
+        forEveryQuestion { id, root, midis ->
+            val shape = Neck.shapeOf(midis)
+            assertEquals("$id at $root lost a note", midis.size, shape.size)
+            assertEquals("$id at $root is drawn as the wrong notes",
+                midis.sorted(), shape.map { Neck.midiAt(it.string, it.fret) })
+            for (spot in shape) {
+                assertTrue("$id at $root runs off the neck", spot.fret in 0..Neck.FRETS)
             }
+            checked++
         }
         assertTrue("the sweep did not run", checked > 200)
     }
 
-    /** Ascending notes on ascending strings is what makes it a shape a hand
-     *  could hold rather than marks strung along one string. */
-    @Test fun `a shape climbs the strings as it climbs in pitch`() {
+    /**
+     * Notes that sound together have to be reachable together. Above a certain
+     * register the upper notes of a four-note voicing all want the top string,
+     * which is why chords keep to CHORD_TOP while melodic notes do not.
+     */
+    @Test fun `every chord the drill can ask is a shape a hand could hold`() {
+        for (lesson in LESSONS.filter { it.mode == Mode.HARMONIC }) {
+            for (id in lesson.set) {
+                val offsets = offsetsOf(id)
+                for (root in 50..(Neck.CHORD_TOP - offsets.max())) {
+                    val midis = listOf(root) + offsets.map { root + it }
+                    val strings = Neck.shapeOf(midis).map { it.string }
+                    assertEquals("$id at $root wants one string twice",
+                        strings.size, strings.toSet().size)
+                    assertEquals("$id at $root climbs out of order",
+                        strings.sorted(), strings)
+                }
+            }
+        }
+    }
+
+    /** First position wherever first position will have it: the easiest shape
+     *  to read, and the one a learner already knows. */
+    @Test fun `a shape sits as low on the neck as it can`() {
         val shape = Neck.shapeOf(listOf(50, 57, 62))
-        assertEquals(listOf(0, 2, 3), shape.map { it.fret })
         assertEquals(listOf(2, 3, 4), shape.map { it.string })
+        assertEquals(listOf(0, 2, 3), shape.map { it.fret })
+    }
+
+    /** Taking each note greedily gives the root a high string and strands
+     *  everything above it. The whole assignment is chosen at once. */
+    @Test fun `a high root does not strand the notes above it`() {
+        val shape = Neck.shapeOf(listOf(60, 64, 67))
+        assertEquals(3, shape.size)
+        assertEquals(listOf(60, 64, 67), shape.map { Neck.midiAt(it.string, it.fret) })
+        assertEquals("these three are reachable together",
+            3, shape.map { it.string }.toSet().size)
+    }
+
+    private fun forEveryQuestion(check: (String, Int, List<Int>) -> Unit) {
+        for (lesson in LESSONS) {
+            val ceiling = if (lesson.mode == Mode.MELODIC) Neck.HIGHEST else Neck.CHORD_TOP
+            for (id in lesson.set) {
+                val offsets = offsetsOf(id)
+                for (root in 50..(ceiling - offsets.max())) {
+                    check(id, root, listOf(root) + offsets.map { root + it })
+                }
+            }
+        }
     }
 }

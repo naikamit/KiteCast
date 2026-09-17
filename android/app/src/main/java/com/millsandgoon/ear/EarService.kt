@@ -312,7 +312,11 @@ class EarService : Service() {
         val id = weightedPick()
         val span = offsetsOf(id).max()
         var root: Int
-        do { root = 50 + Random.nextInt(Neck.HIGHEST - span - 50 + 1) } while (root == lastRoot)
+        // Notes that sound together have to be drawable together, so a chord
+        // keeps to the register the neck can voice. Melodic notes arrive one
+        // at a time and use the whole neck.
+        val ceiling = if (lesson.mode == Mode.MELODIC) Neck.HIGHEST else Neck.CHORD_TOP
+        do { root = 50 + Random.nextInt(ceiling - span - 50 + 1) } while (root == lastRoot)
         lastRoot = root
         return Question(id, root, Synth.Voice.values().random())
     }
