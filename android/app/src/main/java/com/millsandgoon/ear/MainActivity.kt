@@ -231,9 +231,14 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
     }
     override fun onScores() = runOnUiThread { menu.notifyDataSetChanged() }
 
+    /** Keeping the lines costs a little memory; re-parsing the whole panel out
+     *  of its own TextView on every line cost the UI thread rather more. */
+    private val shown = ArrayDeque<String>()
+
     override fun onLog(line: String) = runOnUiThread {
-        val lines = (ui.log.text.toString() + "\n" + line).trim().lines()
-        ui.log.text = lines.takeLast(60).joinToString("\n")
+        shown.addLast(line)
+        while (shown.size > 60) shown.removeFirst()
+        ui.log.text = shown.joinToString("\n")
     }
 
     override fun onLesson(lesson: Lesson) = runOnUiThread {

@@ -106,7 +106,6 @@ class EarService : Service() {
             onFinal = { t -> onHeard(t, true) },
             onReady = {
                 modelReady = true
-                listener.start()
                 if (startPending) { startPending = false; beginDrill() }
             },
             onFailed = { m ->
@@ -173,10 +172,24 @@ class EarService : Service() {
     }
 
     private fun beginDrill() {
+        openEars()
+        ask()
+    }
+
+    /** Everything that has to be true before a question is worth asking. */
+    private fun openEars() {
         routing.engage()
         adoptRoute()
+        if (!listener.listening) listener.start()
         listener.setPaused(false)
-        ask()
+    }
+
+    /** Give back the microphone, the headset and the decoder. A paused drill
+     *  in a pocket should cost nothing at all; leaving the recogniser running
+     *  through it is what put this app at the top of the battery screen. */
+    private fun closeEars() {
+        listener.stop()
+        routing.release()
     }
 
     /**
@@ -198,8 +211,8 @@ class EarService : Service() {
         phase = Phase.IDLE
         loop?.cancel(); silence?.cancel()
         player.stop(); speaker.stop()
-        listener.setPaused(true)              // pause stops listening too
-        log("mic", "paused — microphone off")
+        closeEars()
+        log("mic", "paused — microphone released")
         status("", TONE_PLAIN)             // the play icon is the whole message
         pushTransport(); notifyBar()
     }
@@ -207,7 +220,7 @@ class EarService : Service() {
     fun resume() {
         if (!running || !paused) return
         paused = false
-        listener.setPaused(false)
+        openEars()
         log("mic", "resumed")
         pushTransport(); notifyBar()
         if (listenMode) listenLoop() else ask()
@@ -217,8 +230,7 @@ class EarService : Service() {
         running = false; paused = false
         loop?.cancel(); silence?.cancel()
         player.stop(); speaker.stop()
-        listener.setPaused(true)
-        routing.release()
+        closeEars()
         log("mic", "session stopped")
         if (asked > 0) say("That's $hits of $asked. ${pct(hits, asked)} percent.") {}
         status("", TONE_PLAIN)

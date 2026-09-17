@@ -202,6 +202,36 @@ class PageTest {
         assertFalse("Random.nextBoolean" in service)
     }
 
+    /**
+     * The app spent a day at the top of the battery screen, flagged for high
+     * CPU. Three reasons, all the same mistake: the recogniser kept decoding
+     * when nobody wanted an answer — through every spoken prompt, through the
+     * pause button, and from the moment the model unpacked whether or not
+     * anyone had pressed play. Decoding a 16 kHz stream is not free, and a
+     * service does it until the phone is flat.
+     */
+    @Test fun `a drill nobody is answering costs nothing`() {
+        val listener = src("Listener.kt")
+
+        // Quiet means the decoder stops, not that its results are binned.
+        assertTrue("decoding must stop while quiet", "if (paused) continue" in listener)
+        assertTrue("skipped audio leaves the recogniser mid-word",
+            "recognizer.reset()" in listener)
+
+        // A read that keeps failing must not spin at processor speed.
+        assertTrue("a failing read must end the loop", "if (n < 0)" in listener)
+
+        // Pause hands the microphone back rather than holding it open.
+        assertTrue("fun closeEars()" in service)
+        val pause = service.substring(service.indexOf("fun pause()")).substringBefore("\n    }")
+        assertTrue("pause must release the microphone", "closeEars()" in pause)
+
+        // And nothing starts listening merely because a model finished unpacking.
+        val ready = service.substring(service.indexOf("onReady = {")).substringBefore("},")
+        assertFalse("unpacking a model is not a reason to listen",
+            "listener.start()" in ready)
+    }
+
     /** These numbers were measured, not chosen. A slip would quietly detune
      *  the whole app. */
     @Test fun `the synth carries the measured constants`() {

@@ -37,6 +37,7 @@ class Listener(
     private var model: Model? = null
     @Volatile private var paused = false
     @Volatile private var capturing = false
+    @Volatile private var stale = false
     private var worker: Thread? = null
     private var record: AudioRecord? = null
 
@@ -99,11 +100,21 @@ class Listener(
                 try {
                     while (capturing) {
                         val n = rec.read(buf, 0, buf.size)
-                        if (n <= 0) continue
-                        // Read on regardless, so the recogniser never has to
-                        // resume mid-word — only the results are withheld.
-                        val complete = recognizer.acceptWaveForm(buf, n)
+                        // A read that keeps failing would spin this thread at
+                        // the speed of the processor rather than the speed of
+                        // the audio clock, which is a flat battery in an hour.
+                        if (n < 0) { onLog("warn", "microphone read failed ($n)"); break }
+                        if (n == 0) continue
+
+                        // Decoding is the expensive half, and while the drill
+                        // is talking nobody wants the answer. Skipping it here
+                        // is the difference between a warm phone and a cold
+                        // one; the microphone stays open so the next word is
+                        // never clipped.
                         if (paused) continue
+                        if (stale) { stale = false; recognizer.reset() }
+
+                        val complete = recognizer.acceptWaveForm(buf, n)
                         if (complete) text(recognizer.result, "text")?.let(onFinal)
                         else text(recognizer.partialResult, "partial")?.let(onPartial)
                     }
@@ -128,19 +139,36 @@ class Listener(
         setPaused(wasPaused)
     }
 
-    /** True mute: capture continues but results are dropped, so the drill's
-     *  own voice can never be taken for yours. */
-    fun setPaused(value: Boolean) { paused = value }
+    /**
+     * Go quiet for a moment without letting the microphone go.
+     *
+     * This is the beat while the drill speaks, not the pause button. Tearing
+     * capture down and building it up for every prompt would cost more than it
+     * saves and would re-acquire the device each time; decoding stops, which
+     * is the half that costs. Skipped audio leaves the recogniser mid-word, so
+     * it is reset before the next one.
+     *
+     * For the pause button, and for anything longer, use stop(): it releases
+     * the microphone too.
+     */
+    fun setPaused(value: Boolean) {
+        if (paused == value) return
+        paused = value
+        if (!value) stale = true
+    }
 
     fun stop() {
         capturing = false
-        worker?.let { try { it.join(500) } catch (_: Exception) {} }
-        worker = null
-        record?.let {
-            try { it.stop() } catch (_: Exception) {}
-            try { it.release() } catch (_: Exception) {}
-        }
+        val rec = record
         record = null
+        // Stop before joining: the worker is asleep inside read() and only
+        // stopping wakes it. Joining first would time out and then release the
+        // recorder from under a thread still reading it.
+        try { rec?.stop() } catch (_: Exception) {}
+        worker?.let { try { it.join(1000) } catch (_: Exception) {} }
+        worker = null
+        try { rec?.release() } catch (_: Exception) {}
+        paused = false
     }
 
     fun release() {
