@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
 
         ui.menu.setOnClickListener { ui.drawer.openDrawer(GravityCompat.START) }
         ui.reset.setOnClickListener { service?.resetScore() }
+        ui.fretboard.onPluck = { midi -> service?.pluck(midi) }
 
         ui.transport.setOnClickListener {
             if (chosen == null) { openExercises(); return@setOnClickListener }
@@ -230,6 +231,10 @@ class MainActivity : AppCompatActivity(), EarService.Observer {
         ui.transport.contentDescription = if (playing) "Pause" else "Start"
     }
     override fun onScores() = runOnUiThread { menu.notifyDataSetChanged() }
+
+    override fun onShape(marks: List<Neck.Spot>) = runOnUiThread {
+        ui.fretboard.marks = marks
+    }
 
     /** Keeping the lines costs a little memory; re-parsing the whole panel out
      *  of its own TextView on every line cost the UI thread rather more. */

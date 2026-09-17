@@ -35,6 +35,7 @@ class EarService : Service() {
         fun onLog(line: String)
         fun onLesson(lesson: Lesson)
         fun onScores()
+        fun onShape(marks: List<Neck.Spot>)
     }
 
     inner class LocalBinder : Binder() { val service: EarService get() = this@EarService }
@@ -311,9 +312,20 @@ class EarService : Service() {
         val id = weightedPick()
         val span = offsetsOf(id).max()
         var root: Int
-        do { root = 50 + Random.nextInt(84 - span - 50 + 1) } while (root == lastRoot)
+        do { root = 50 + Random.nextInt(Neck.HIGHEST - span - 50 + 1) } while (root == lastRoot)
         lastRoot = root
         return Question(id, root, Synth.Voice.values().random())
+    }
+
+    private fun notesOf(q: Question): List<Int> =
+        listOf(q.root) + offsetsOf(q.id).map { q.root + it }
+
+    /** Tapping the neck sounds that note in the voice the drill is using. */
+    fun pluck(midi: Int) {
+        scope.launch {
+            player.play(Synth.renderQuestion(
+                current?.voice ?: Synth.Voice.NYLON, midi, emptyList(), true))
+        }
     }
 
     /** Weighted by everything ever drilled, not just this session. */
@@ -333,6 +345,7 @@ class EarService : Service() {
     private suspend fun play(q: Question): Int = withContext(Dispatchers.Default) {
         phase = Phase.PLAYING
         status("", TONE_PLAIN)
+        observer?.onShape(emptyList())     // a new question shows its own hand
         // Logged but never shown: on a melodic lesson "ascending" is the
         // answer's other half.
         log("play", q.voice.label + " · " +
@@ -435,6 +448,8 @@ class EarService : Service() {
             } else {
                 player.stop()
                 status(truthName, TONE_BAD)
+                // The one moment a picture beats a word: here is where it was.
+                observer?.onShape(Neck.shapeOf(notesOf(q)))
                 // Just the answer. The colour already says you missed it, and
                 // being told so twenty times in a row is wearing.
                 awaitSpeech(truthName)
@@ -552,6 +567,7 @@ class EarService : Service() {
 
     private fun replay(o: Observer) {
         o.onLesson(lesson)
+        o.onShape(emptyList())
         pushTransport(); pushTally()
         synchronized(logLines) { logLines.forEach { o.onLog(it) } }
     }
