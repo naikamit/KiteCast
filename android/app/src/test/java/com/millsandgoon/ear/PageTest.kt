@@ -232,6 +232,25 @@ class PageTest {
             "listener.start()" in ready)
     }
 
+    /** The neck sits between the score and the transport, is always there,
+     *  and answers a thumb whether or not a drill is running. */
+    @Test fun `the neck is always on the page and always playable`() {
+        val order = listOf("tallyRight", "reset", "fretboard", "transport")
+            .map { layout.indexOf("@+id/$it\"") }
+        assertTrue("the neck must sit above play/pause", order.sorted() == order)
+        assertTrue("@+id/fretboard" in layout)
+        assertFalse("the neck is not something to hide",
+            "android:visibility=\"gone\"" in view("fretboard"))
+
+        val activity = src("MainActivity.kt")
+        assertTrue("ui.fretboard.onPluck" in activity)
+        assertTrue("fun pluck(midi: Int)" in service)
+
+        // Marked only after a miss, and cleared by the next question.
+        assertTrue("onShape(Neck.shapeOf" in service)
+        assertTrue("observer?.onShape(emptyList())" in service)
+    }
+
     /** These numbers were measured, not chosen. A slip would quietly detune
      *  the whole app. */
     @Test fun `the synth carries the measured constants`() {

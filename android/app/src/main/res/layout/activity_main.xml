@@ -138,7 +138,16 @@
                     android:src="@drawable/ic_reset" />
             </LinearLayout>
 
-            <!-- 3. the only thing your thumb reaches for without looking -->
+            <!-- 3. where those notes live. Always here, always playable, and
+                 marked up after a wrong answer. -->
+            <com.millsandgoon.ear.Fretboard
+                android:id="@+id/fretboard"
+                android:layout_width="match_parent"
+                android:layout_height="170dp"
+                android:layout_marginTop="24dp"
+                android:contentDescription="Guitar neck — tap a fret to hear it" />
+
+            <!-- 4. the only thing your thumb reaches for without looking -->
             <ImageButton
                 android:id="@+id/transport"
                 android:layout_width="match_parent"
