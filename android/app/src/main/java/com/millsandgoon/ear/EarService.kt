@@ -78,7 +78,7 @@ class EarService : Service() {
 
     private enum class Phase { IDLE, PLAYING, LISTENING, CONFIRMING, FEEDBACK }
     private data class Question(val id: String, val root: Int, val voice: Synth.Voice,
-                                val descending: Boolean, var replays: Int = 0)
+                                var replays: Int = 0)
 
     // ---- components ----
     private lateinit var player: Player
@@ -301,8 +301,7 @@ class EarService : Service() {
         var root: Int
         do { root = 50 + Random.nextInt(84 - span - 50 + 1) } while (root == lastRoot)
         lastRoot = root
-        return Question(id, root, Synth.Voice.values().random(),
-            lesson.mode == Mode.MELODIC && Random.nextBoolean())
+        return Question(id, root, Synth.Voice.values().random())
     }
 
     /** Weighted by everything ever drilled, not just this session. */
@@ -325,10 +324,10 @@ class EarService : Service() {
         // Logged but never shown: on a melodic lesson "ascending" is the
         // answer's other half.
         log("play", q.voice.label + " · " +
-            (if (lesson.mode == Mode.MELODIC) (if (q.descending) "descending" else "ascending") else "harmonic") +
+            (if (lesson.mode == Mode.MELODIC) "ascending" else "harmonic") +
             if (q.replays > 0) " · replay ${q.replays}" else "")
         val buf = Synth.renderQuestion(q.voice, q.root, offsetsOf(q.id),
-            lesson.mode == Mode.MELODIC, q.descending)
+            lesson.mode == Mode.MELODIC)
         player.play(buf)
     }
 

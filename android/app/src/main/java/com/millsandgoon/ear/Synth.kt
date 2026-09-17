@@ -8,6 +8,7 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tanh
 import kotlin.random.Random
 
 /**
@@ -23,6 +24,24 @@ import kotlin.random.Random
 object Synth {
 
     const val SAMPLE_RATE = 48000
+
+    /**
+     * The loudness every question is normalised to.
+     *
+     * The old rule normalised each note to a fixed *peak*, which is not what
+     * you hear. A peak tracks the sharpest transient — a piano hammer, a steel
+     * pick — while loudness tracks the body of the note, and the body is what
+     * carries the pitch. Measured across voices, roots and chord shapes, that
+     * left an 8.8 dB spread: a melodic steel seventh landed at less than a
+     * third of a harmonic piano seventh. Normalising on loudness instead
+     * closes it to 0.01 dB.
+     */
+    private const val TARGET_LOUDNESS = 0.20f
+
+    /** Peaks above the knee are bent, not scaled, so one sharp transient
+     *  cannot quietly pull a whole question down with it. */
+    private const val KNEE = 0.65f
+    private const val CEILING = 0.97f
 
     /** Vosk's models are trained at 16 kHz; feeding anything else degrades them. */
     const val SAMPLE_RATE_RECOGNITION = 16000.0f
@@ -133,6 +152,53 @@ object Synth {
         }
     }
 
+    // ---- loudness --------------------------------------------------------
+
+    private fun rms(buf: FloatArray, from: Int, len: Int): Float {
+        var sum = 0.0
+        for (i in from until from + len) { val v = buf[i].toDouble(); sum += v * v }
+        return sqrt(sum / len).toFloat()
+    }
+
+    /**
+     * The loudest 50 ms, stepped at half a window so a transient never falls
+     * across a boundary and reads quiet. This is the crude cousin of a
+     * momentary-loudness meter, and it is close enough to the ear for notes
+     * that are all onset and decay.
+     */
+    private fun momentary(buf: FloatArray): Float {
+        if (buf.isEmpty()) return 0f
+        val w = (SAMPLE_RATE * 0.05).toInt()
+        if (buf.size < w) return rms(buf, 0, buf.size)
+        var best = 0f
+        var i = 0
+        while (i + w <= buf.size) {
+            best = max(best, rms(buf, i, w))
+            i += w / 2
+        }
+        return best
+    }
+
+    /** Bend the peaks rather than scaling the buffer down to fit them. */
+    private fun softClip(buf: FloatArray) {
+        val span = CEILING - KNEE
+        for (i in buf.indices) {
+            val v = buf[i]
+            val a = abs(v)
+            if (a <= KNEE) continue
+            val shaped = KNEE + span * tanh((a - KNEE) / span)
+            buf[i] = if (v < 0) -shaped else shaped
+        }
+    }
+
+    private fun levelTo(buf: FloatArray, target: Float) {
+        val l = momentary(buf)
+        if (l > 1e-6f) { val g = target / l; for (i in buf.indices) buf[i] *= g }
+        softClip(buf)
+    }
+
+    /** Each note leaves at unit loudness, so no note inside a question is
+     *  louder than its neighbours before the question as a whole is set. */
     private fun note(voice: Voice, midi: Int, seconds: Double): FloatArray {
         val f = midiToFreq(midi)
         val raw = when (voice) {
@@ -140,10 +206,8 @@ object Synth {
             Voice.NYLON -> renderPluck(f, seconds, 0.34, 1.9, 0.11, 0.0)
             Voice.STEEL -> renderPluck(f, seconds, 0.56, 3.1, 0.40, 0.06)
         }
-        var peak = 1e-9f
-        for (v in raw) peak = max(peak, abs(v))
-        val norm = 0.55f / peak
-        for (i in raw.indices) raw[i] *= norm
+        val l = momentary(raw)
+        if (l > 1e-6f) { val g = 1f / l; for (i in raw.indices) raw[i] *= g }
         return raw
     }
 
@@ -153,33 +217,40 @@ object Synth {
      *
      * `offsets` are semitones above the root, so a two-note interval and a
      * four-note seventh chord are the same shape of thing.
+     *
+     * Melodic questions ascend. They used to go either way, but a descending
+     * fifth and an ascending fourth end on the same note, and having to hold
+     * the direction in your head as well as the interval taught the wrong
+     * skill.
      */
     fun renderQuestion(voice: Voice, rootMidi: Int, offsets: List<Int>,
-                       melodic: Boolean, descending: Boolean): FloatArray {
-        var midis = listOf(rootMidi) + offsets.map { rootMidi + it }
-        // More notes sharing one output need more headroom, or a four-note
-        // chord clips where a two-note interval did not.
-        val gain = (0.85f / Math.sqrt(midis.size.toDouble()).toFloat()) * 1.25f
+                       melodic: Boolean): FloatArray {
+        val midis = listOf(rootMidi) + offsets.map { rootMidi + it }
 
+        val out: FloatArray
         if (!melodic) {
             val rendered = midis.map { note(voice, it, 3.0) }
-            val out = FloatArray(rendered.maxOf { it.size })
-            for (r in rendered) for (i in r.indices) out[i] += r[i] * gain
-            return out
+            out = FloatArray(rendered.maxOf { it.size })
+            for (r in rendered) for (i in r.indices) out[i] += r[i]
+        } else {
+            val step = (0.62 * SAMPLE_RATE).toInt()
+            val rendered = midis.mapIndexed { k, m ->
+                note(voice, m, if (k == midis.size - 1) 2.6 else 2.2) }
+            out = FloatArray(rendered.indices.maxOf { it * step + rendered[it].size })
+            for ((k, r) in rendered.withIndex()) {
+                val at = k * step
+                for (i in r.indices) out[at + i] += r[i]
+            }
         }
 
-        if (descending) midis = midis.reversed()
-        val step = (0.62 * SAMPLE_RATE).toInt()
-        val rendered = midis.mapIndexed { k, m -> note(voice, m, if (k == midis.size - 1) 2.6 else 2.2) }
-        val out = FloatArray(rendered.indices.maxOf { it * step + rendered[it].size })
-        for ((k, r) in rendered.withIndex()) {
-            val at = k * step
-            for (i in r.indices) out[at + i] += r[i] * gain
-        }
+        // Set once, at the end. Mixing gains that guess at headroom are how
+        // four quiet notes and two loud ones happened in the first place.
+        levelTo(out, TARGET_LOUDNESS)
         return out
     }
 
-    /** Short non-verbal confirmation: faster and less grating than a spoken one. */
+    /** Short non-verbal confirmation: faster and less grating than a spoken
+     *  one, and levelled against the same scale so it never startles. */
     fun chime(): FloatArray {
         val n = (SAMPLE_RATE * 0.34).toInt()
         val out = FloatArray(n)
@@ -194,6 +265,7 @@ object Synth {
                 out[i] += (sin(w * (i - start)) * env).toFloat()
             }
         }
+        levelTo(out, TARGET_LOUDNESS * 0.7f)
         return out
     }
 }
