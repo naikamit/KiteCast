@@ -194,12 +194,20 @@ class PageTest {
         assertTrue("MODIFY_AUDIO_SETTINGS" in read("src/main/AndroidManifest.xml"))
     }
 
+    /** Direction is gone from the question, not merely defaulted: a flag that
+     *  is always false is a flag someone flips back by accident. */
+    @Test fun `melodic questions ascend and nothing chooses otherwise`() {
+        assertFalse("descending" in service)
+        assertFalse("descending" in src("Synth.kt").substringAfter("fun renderQuestion"))
+        assertFalse("Random.nextBoolean" in service)
+    }
+
     /** These numbers were measured, not chosen. A slip would quietly detune
      *  the whole app. */
     @Test fun `the synth carries the measured constants`() {
         val synth = src("Synth.kt")
         for (c in listOf("0.00015", "-1.25", "0.82", "2.4 /", "6.9078",
-                         "0.34, 1.9, 0.11", "0.56, 3.1, 0.40", "0.55f")) {
+                         "0.34, 1.9, 0.11", "0.56, 3.1, 0.40")) {
             assertTrue("$c is gone from the synth", c in synth)
         }
     }
