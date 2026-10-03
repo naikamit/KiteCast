@@ -79,14 +79,13 @@ deployment, one disk, two faces; leave the variable empty and nothing
 changes. Point the domain at the host with an A record for the apex and a
 CNAME for `www` (your platform's dashboard gives the exact values).
 
-**Ear trainer.** Voice-only interval practice, now a native Android app and
-nothing else — see `android/README.md`. It used to be the third app here, with
-the drill in the browser and mastery on this server. The browser could not hold
-the microphone with the screen off, which is the whole point on a commute, and
-its speech recognition was cloud-backed, which is the opposite of one. The
-phone does all of it offline now: synthesis, recognition, scoring and the
-record. Nothing about it reaches this server, and the app asks for no network
-permission at all.
+**Ear trainer — moved out.** Interval practice by voice used to be the third
+app here, with the drill in the browser and mastery on this server. It is a
+native Android app now and nothing else: the browser could not hold the
+microphone with the screen off, which is the whole point on a commute, and its
+speech recognition was cloud-backed, which is the opposite of one. The phone
+does all of it offline, so there was nothing left for a server to do. It lives
+at [naikamit/ear](https://github.com/naikamit/ear); no code of it remains here.
 
 **Paid unlock.** A book can give away its first N chapters and gate the rest.
 The locked chapters are withheld *server-side* — they never reach a locked
